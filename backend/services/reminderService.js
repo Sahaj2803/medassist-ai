@@ -1,5 +1,10 @@
 import Reminder from "../models/Reminder.js";
 import { defaultTimesForFrequency, computeEndDate } from "../utils/scheduleTimes.js";
+import {
+  todayAt,
+  startOfToday,
+  endOfToday,
+} from "../utils/timezone.js";
 
 /**
  * Auto-creates a recurring reminder for a medicine once it's confirmed
@@ -32,12 +37,7 @@ export async function autoCreateReminderForMedicine(medicine) {
   });
 }
 
-function todayAt(timeStr) {
-  const [hours, minutes] = timeStr.split(":").map(Number);
-  const d = new Date();
-  d.setHours(hours, minutes, 0, 0);
-  return d;
-}
+
 
 function isSameTimestamp(a, b) {
   return new Date(a).getTime() === new Date(b).getTime();
@@ -57,10 +57,8 @@ function isSameTimestamp(a, b) {
  */
 export async function getTodayOccurrences(userId) {
   const now = new Date();
-  const startOfDay = new Date(now);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(now);
-  endOfDay.setHours(23, 59, 59, 999);
+  const startOfDay = startOfToday(now);
+  const endOfDay = endOfToday(now);
 
   const reminders = await Reminder.find({
     user: userId,

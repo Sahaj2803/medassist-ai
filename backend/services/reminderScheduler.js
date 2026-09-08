@@ -1,24 +1,12 @@
 import cron from "node-cron";
 import Reminder from "../models/Reminder.js";
 import { sendReminderEmail } from "./emailService.js";
+import { currentHHmm, todayAt } from "../utils/timezone.js";
 
 // A "due" dose that's never marked taken becomes "missed" after this
 // long, so the dashboard doesn't show a 6-hour-old dose as still "due".
 const MISSED_GRACE_PERIOD_MS = 3 * 60 * 60 * 1000; // 3 hours
 
-function currentHHmm(date = new Date()) {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(
-    2,
-    "0"
-  )}`;
-}
-
-function todayAt(timeStr, base = new Date()) {
-  const [hours, minutes] = timeStr.split(":").map(Number);
-  const d = new Date(base);
-  d.setHours(hours, minutes, 0, 0);
-  return d;
-}
 
 /**
  * Finds every active reminder whose schedule includes the current
