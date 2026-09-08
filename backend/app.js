@@ -24,9 +24,14 @@ const app = express();
 
 // ---------- Security middleware ----------
 app.use(helmet());
+const allowedOrigins = [
+  env.CLIENT_URL,
+  env.MOBILE_CLIENT_URL,
+];
+
 app.use(
   cors({
-    origin: env.CLIENT_URL,
+    origin: allowedOrigins,
     credentials: true,
   })
 );

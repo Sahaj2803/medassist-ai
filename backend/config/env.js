@@ -11,6 +11,7 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV || "development",
   PORT: process.env.PORT || 5000,
   CLIENT_URL: process.env.CLIENT_URL || "http://localhost:5173",
+  MOBILE_CLIENT_URL: process.env.MOBILE_CLIENT_URL || "http://localhost:8081",
 
   MONGO_URI: process.env.MONGO_URI || "mongodb://127.0.0.1:27017/medassist",
 
