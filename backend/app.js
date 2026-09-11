@@ -22,6 +22,7 @@ import dietRoutes from "./routes/diet.routes.js";
 
 const app = express();
 
+app.set("trust proxy", 1);
 // ---------- Security middleware ----------
 app.use(helmet());
 const allowedOrigins = [
