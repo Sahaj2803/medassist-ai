@@ -1,63 +1,109 @@
-import nodemailer from "nodemailer";
+import { BrevoClient } from "@getbrevo/brevo";
 import { env } from "../config/env.js";
 
-let transporter = null;
+const brevo = new BrevoClient({
+  apiKey: env.BREVO_API_KEY,
+  timeoutInSeconds: 15,
+  maxRetries: 2,
+});
 
-function getTransporter() {
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
-    return null; // not configured — caller decides how to handle this
-  }
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: Number(env.SMTP_PORT) || 587,
-      secure: Number(env.SMTP_PORT) === 465,
-      auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
-    });
-  }
-  return transporter;
-}
-
-/**
- * Sends a "time to take your medicine" reminder email.
- * Silently no-ops (with a console warning) if SMTP isn't configured,
- * so a missing .env setting never crashes the reminder scheduler.
- *
- * @returns {Promise<boolean>} true if the email was actually sent
- */
-export async function sendReminderEmail({ to, userName, medicineName, dosage, time }) {
-  const t = getTransporter();
-  if (!t) {
-    console.warn(
-      "[Email] SMTP is not configured (SMTP_HOST/SMTP_USER/SMTP_PASS) — skipping reminder email."
-    );
+export async function sendReminderEmail({
+  to,
+  userName,
+  medicineName,
+  dosage,
+  time,
+}) {
+  if (!env.BREVO_API_KEY || !env.BREVO_SENDER_EMAIL) {
+    console.warn("[Email] Brevo is not configured.");
     return false;
   }
 
   const dosageLine = dosage ? ` (${dosage})` : "";
 
   try {
-    await t.sendMail({
-      from: env.EMAIL_FROM || `MedAssist <${env.SMTP_USER}>`,
-      to,
-      subject: `Reminder: take ${medicineName}${dosageLine}`,
-      text: `Hi ${userName || "there"},\n\nIt's ${time} — time to take your ${medicineName}${dosageLine}.\n\nOpen MedAssist to mark this dose as taken.\n\n— MedAssist`,
-      html: `
-        <div style="font-family: sans-serif; color: #0F1E3A;">
-          <h2 style="margin-bottom: 4px;">Time to take your medicine</h2>
-          <p>Hi ${userName || "there"},</p>
-          <p>It's <strong>${time}</strong> — time to take <strong>${medicineName}${dosageLine}</strong>.</p>
-          <p style="color: #64748B; font-size: 13px; margin-top: 24px;">
-            Sent automatically by MedAssist. Open the app to mark this dose as taken.
-          </p>
-        </div>
-      `,
-    });
+    const result =
+      await brevo.transactionalEmails.sendTransacEmail({
+        sender: {
+          name: env.BREVO_SENDER_NAME || "MedAssist Team",
+          email: env.BREVO_SENDER_EMAIL,
+        },
+        to: [
+          {
+            email: to,
+            name: userName || "MedAssist User",
+          },
+        ],
+        subject: `Reminder: take ${medicineName}${dosageLine}`,
+        textContent: `Hi ${userName || "there"},
+
+It's ${time} — time to take your ${medicineName}${dosageLine}.
+
+Open MedAssist to mark this dose as taken.
+
+— MedAssist Team`,
+        htmlContent: `
+          <div style="
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 24px;
+          ">
+            <h2 style="color:#0f766e;">MedAssist</h2>
+
+            <p>Hi ${userName || "there"},</p>
+
+            <p>
+              It's <strong>${time}</strong> —
+              time to take your medication.
+            </p>
+
+            <div style="
+              background:#f0fdfa;
+              padding:20px;
+              border-radius:12px;
+              margin:20px 0;
+            ">
+              <h3 style="margin-top:0;">
+                ${medicineName}
+              </h3>
+
+              ${
+                dosage
+                  ? `<p>Dosage: <strong>${dosage}</strong></p>`
+                  : ""
+              }
+
+              <p>
+                Scheduled time:
+                <strong>${time}</strong>
+              </p>
+            </div>
+
+            <p>
+              Open MedAssist to mark this dose as taken.
+            </p>
+
+            <hr />
+
+            <p style="color:#94a3b8;font-size:12px;">
+              This is an automated reminder from MedAssist.
+            </p>
+
+            <p style="color:#94a3b8;font-size:12px;">
+              — MedAssist Team
+            </p>
+          </div>
+        `,
+      });
+
+    console.log(
+      `[Email] Reminder sent successfully via Brevo. Message ID: ${result.messageId}`
+    );
+
     return true;
-  } catch (err) {
-    console.error(`[Email] Failed to send reminder email: ${err.message}`);
+  } catch (error) {
+    console.error(`[Email] Brevo failed: ${error.message}`);
     return false;
   }
 }
-
-export default { sendReminderEmail };

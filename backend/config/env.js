@@ -26,11 +26,16 @@ export const env = {
   GROQ_API_KEY: process.env.GROQ_API_KEY,
   GROQ_MODEL: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
 
-  SMTP_HOST: process.env.SMTP_HOST,
-  SMTP_PORT: process.env.SMTP_PORT,
-  SMTP_USER: process.env.SMTP_USER,
-  SMTP_PASS: process.env.SMTP_PASS,
-  EMAIL_FROM: process.env.EMAIL_FROM,
+  // SMTP_HOST: process.env.SMTP_HOST,
+  // SMTP_PORT: process.env.SMTP_PORT,
+  // SMTP_USER: process.env.SMTP_USER,
+  // SMTP_PASS: process.env.SMTP_PASS,
+  // EMAIL_FROM: process.env.EMAIL_FROM,
+
+  BREVO_API_KEY: process.env.BREVO_API_KEY,
+  BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL,
+  BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME || "MedAssist Team",
+  
 
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 900000),
   RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 200),

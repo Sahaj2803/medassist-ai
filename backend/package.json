@@ -11,6 +11,8 @@
     "test": "node --test tests/**/*.test.js"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^6.0.3",
+    "@google/genai": "^2.15.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
@@ -25,10 +27,8 @@
     "mongoose": "^8.5.1",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.9.14",
     "node-cron": "^3.0.3",
-    "pdf-parse": "^1.1.1",
-    "@google/genai": "^2.15.0"
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
