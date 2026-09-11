@@ -5,7 +5,9 @@ import { currentHHmm, todayAt } from "../utils/timezone.js";
 
 // A "due" dose that's never marked taken becomes "missed" after this
 // long, so the dashboard doesn't show an old dose as still "due".
-const MISSED_GRACE_PERIOD_MS = 3 * 60 * 60 * 1000; // 3 hours
+// Exported so reminderService.js (the "today" dashboard view) uses the
+// exact same window — keeps the two in sync without a separate file.
+export const MISSED_GRACE_PERIOD_MS = 15 * 60 * 1000; // 15 minutes
 
 // Scheduler can be delayed by Render/network/server load.
 // Check a small window instead of depending on one exact cron minute.

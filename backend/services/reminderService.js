@@ -5,6 +5,7 @@ import {
   startOfToday,
   endOfToday,
 } from "../utils/timezone.js";
+import { MISSED_GRACE_PERIOD_MS } from "./reminderScheduler.js";
 
 /**
  * Auto-creates a recurring reminder for a medicine once it's confirmed
@@ -82,8 +83,16 @@ export async function getTodayOccurrences(userId) {
         status = existingLog.status;
       } else if (scheduledFor > now) {
         status = "pending"; // not due yet
+      } else if (now - scheduledFor < MISSED_GRACE_PERIOD_MS) {
+        // Time has passed but we're still inside the same grace window
+        // the scheduler itself uses before it truly calls this missed.
+        // Without this, a dose created seconds before its own time (or
+        // one the cron tick just hasn't reached yet) would flash as
+        // "missed" on the dashboard before the scheduler even gets a
+        // chance to send the "due" notification.
+        status = "due";
       } else {
-        status = "missed"; // time has passed and nothing was ever logged
+        status = "missed"; // outside the grace period and nothing was ever logged
       }
 
       occurrences.push({
