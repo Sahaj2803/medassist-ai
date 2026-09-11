@@ -4,73 +4,97 @@ import { sendReminderEmail } from "./emailService.js";
 import { currentHHmm, todayAt } from "../utils/timezone.js";
 
 // A "due" dose that's never marked taken becomes "missed" after this
-// long, so the dashboard doesn't show a 6-hour-old dose as still "due".
+// long, so the dashboard doesn't show an old dose as still "due".
 const MISSED_GRACE_PERIOD_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+// Scheduler can be delayed by Render/network/server load.
+// Check a small window instead of depending on one exact cron minute.
+const CATCH_UP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
 
 /**
- * Finds every active reminder whose schedule includes the current
- * HH:mm, creates a "due" log entry for it (skipping ones already
- * logged for that exact minute — cron ticks every minute so this
- * guards against double-firing), and dispatches notifications over
- * whichever channels are enabled for that reminder.
+ * Finds active reminders that are due now or were due within the
+ * recent catch-up window.
+ *
+ * This prevents a reminder from being silently skipped if the cron
+ * process starts a little late or a single minute is missed.
  */
 async function dispatchDueReminders() {
   const now = new Date();
-  const nowLabel = currentHHmm(now);
+
+  const windowStart = new Date(now.getTime() - CATCH_UP_WINDOW_MS);
 
   const reminders = await Reminder.find({
     active: true,
-    times: nowLabel,
     startDate: { $lte: now },
     $or: [{ endDate: null }, { endDate: { $gte: now } }],
   }).populate("user", "name email phone");
 
   for (const reminder of reminders) {
-    const scheduledFor = todayAt(nowLabel, now);
-    const alreadyLogged = reminder.logs.some(
-      (log) => log.scheduledFor.getTime() === scheduledFor.getTime()
-    );
-    if (alreadyLogged) continue;
+    if (!Array.isArray(reminder.times)) continue;
 
-    const channelsNotified = [];
+    for (const scheduledTime of reminder.times) {
+      if (!/^\d{2}:\d{2}$/.test(scheduledTime)) continue;
 
-    if (reminder.channels.email && reminder.user?.email) {
-      const sent = await sendReminderEmail({
-        to: reminder.user.email,
-        userName: reminder.user.name,
-        medicineName: reminder.medicineName,
-        dosage: reminder.dosage,
-        time: nowLabel,
+      const scheduledFor = todayAt(scheduledTime, now);
+
+      // Only process reminders that are currently due or recently due.
+      if (scheduledFor < windowStart || scheduledFor > now) {
+        continue;
+      }
+
+      // Prevent duplicate notification for the same occurrence.
+      const alreadyLogged = reminder.logs.some(
+        (log) =>
+          log.scheduledFor &&
+          new Date(log.scheduledFor).getTime() === scheduledFor.getTime()
+      );
+
+      if (alreadyLogged) continue;
+
+      const channelsNotified = [];
+
+      if (reminder.channels?.email && reminder.user?.email) {
+        const sent = await sendReminderEmail({
+          to: reminder.user.email,
+          userName: reminder.user.name,
+          medicineName: reminder.medicineName,
+          dosage: reminder.dosage,
+          time: scheduledTime,
+        });
+
+        if (sent) {
+          channelsNotified.push("email");
+        }
+      }
+
+      // WhatsApp delivery is intentionally disabled.
+      // The database flag remains untouched.
+
+      // Browser notification is handled client-side.
+      if (reminder.channels?.browser) {
+        channelsNotified.push("browser");
+      }
+
+      reminder.logs.push({
+        scheduledFor,
+        status: "due",
+        notifiedAt: new Date(),
+        channelsNotified,
       });
-      if (sent) channelsNotified.push("email");
+
+      await reminder.save();
+
+      console.log(
+        `[ReminderScheduler] Due reminder processed: ${reminder.medicineName} at ${scheduledTime}`
+      );
     }
-
-    // WhatsApp delivery has been removed. The `channels.whatsapp` flag
-    // still exists on the Reminder schema (left untouched per the "do
-    // not change the database schema" requirement) but is intentionally
-    // never read here, so it's inert either way.
-
-    // Browser notifications are delivered client-side (the frontend
-    // polls GET /api/reminders/today and fires a Notification for any
-    // newly-"due" item) rather than server push, to avoid requiring a
-    // VAPID/service-worker push setup for this phase.
-    if (reminder.channels.browser) channelsNotified.push("browser");
-
-    reminder.logs.push({
-      scheduledFor,
-      status: "due",
-      notifiedAt: now,
-      channelsNotified,
-    });
-    await reminder.save();
   }
 }
 
+
 /**
- * Sweeps any "due" log entry whose scheduled time is older than the
- * grace period and was never marked "taken" — flips it to "missed" so
- * dashboards reflect reality instead of showing a stale "due" forever.
+ * Converts old "due" logs to "missed" after the grace period.
  */
 async function sweepMissedReminders() {
   const cutoff = new Date(Date.now() - MISSED_GRACE_PERIOD_MS);
@@ -83,39 +107,62 @@ async function sweepMissedReminders() {
 
   for (const reminder of reminders) {
     let changed = false;
+
     reminder.logs.forEach((log) => {
-      if (log.status === "due" && log.scheduledFor <= cutoff) {
+      if (
+        log.status === "due" &&
+        log.scheduledFor &&
+        new Date(log.scheduledFor) <= cutoff
+      ) {
         log.status = "missed";
         changed = true;
       }
     });
-    if (changed) await reminder.save();
+
+    if (changed) {
+      await reminder.save();
+    }
   }
 }
+
 
 async function tick() {
   try {
+    console.log(
+      `[ReminderScheduler] Tick started at ${new Date().toISOString()}`
+    );
+
     await dispatchDueReminders();
     await sweepMissedReminders();
+
+    console.log("[ReminderScheduler] Tick completed.");
   } catch (err) {
-    console.error(`[ReminderScheduler] Tick failed: ${err.message}`);
+    console.error(
+      `[ReminderScheduler] Tick failed: ${err.message}`,
+      err
+    );
   }
 }
 
+
 let task = null;
 
+
 /**
- * Starts the reminder cron job — runs once per minute. Call once from
- * server.js after the DB connection is established. Idempotent: calling
- * it twice just returns the existing task instead of double-scheduling.
+ * Starts the reminder cron job — runs once per minute.
  */
 export function startReminderScheduler() {
   if (task) return task;
 
   task = cron.schedule("* * * * *", tick);
-  console.log("[ReminderScheduler] Started — checking due reminders every minute.");
+
+  console.log(
+    "[ReminderScheduler] Started — checking due reminders every minute."
+  );
+
   return task;
 }
+
 
 export function stopReminderScheduler() {
   if (task) {
@@ -124,4 +171,8 @@ export function stopReminderScheduler() {
   }
 }
 
-export default { startReminderScheduler, stopReminderScheduler };
+
+export default {
+  startReminderScheduler,
+  stopReminderScheduler,
+};
