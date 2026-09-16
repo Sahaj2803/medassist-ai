@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet } from "react-native";
-import { statusColors, radii, spacing } from "../../constants/theme";
+import { useTheme } from "../../../context/ThemeContext";
+import { statusColorFor } from "../../../constants/theme";
 
 const LABELS = {
   within_range: "Within range",
@@ -15,14 +16,16 @@ const LABELS = {
   failed: "Failed",
   pending: "Pending",
   due: "Due",
+  upcoming: "Upcoming",
   taken: "Taken",
   missed: "Missed",
 };
 
 export default function Badge({ status, label }) {
-  const color = statusColors[status] || statusColors.pending;
+  const { theme } = useTheme();
+  const color = statusColorFor(theme, status);
   return (
-    <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+    <View style={[styles.badge, { backgroundColor: `${color}1F`, borderColor: `${color}55` }]}>
       <View style={[styles.dot, { backgroundColor: color }]} />
       <Text style={[styles.text, { color }]}>{label || LABELS[status] || status}</Text>
     </View>
@@ -33,11 +36,11 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: 4,
     alignSelf: "flex-start",
     paddingVertical: 4,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.full,
+    paddingHorizontal: 8,
+    borderRadius: 999,
     borderWidth: 1,
   },
   dot: { width: 6, height: 6, borderRadius: 3 },

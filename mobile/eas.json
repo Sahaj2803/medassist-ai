@@ -20,7 +20,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://staging-api.medassist.app/api"
+        "EXPO_PUBLIC_API_URL": "https://medassist-ai-e4zj.onrender.com/api"
       }
     },
     "production": {
@@ -28,7 +28,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.medassist.app/api"
+        "EXPO_PUBLIC_API_URL": "https://medassist-ai-e4zj.onrender.com/api"
       }
     }
   },

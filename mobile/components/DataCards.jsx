@@ -1,8 +1,9 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import Card from "./ui/Card";
-import Badge from "./ui/Badge";
-import { colors, spacing, typography } from "../constants/theme";
+import ThemedCard from "./ui/themed/Card";
+import ThemedBadge from "./ui/themed/Badge";
+import { useTheme } from "../context/ThemeContext";
+import { getDisplayStatus } from "../services/doseTracking";
 
 function formatDate(d) {
   if (!d) return "";
@@ -15,150 +16,274 @@ function formatTime(d) {
   return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+// Reusable theme-aware list-row cards, shared across the app's list
+// screens (Prescriptions, Medicines, Lab Reports).
 export function PrescriptionCard({ item, onPress }) {
+  const { theme } = useTheme();
+  const medicineCount = Array.isArray(item.medicines) ? item.medicines.length : null;
   return (
-    <Pressable onPress={onPress}>
-      <Card style={styles.rowCard}>
-        <View style={styles.iconBox}>
-          <Ionicons name="document-text" size={20} color={colors.brand[400]} />
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+      <ThemedCard style={themedStyles.rowCard}>
+        <View style={[themedStyles.iconBox, { backgroundColor: `${theme.colors.primary}17` }]}>
+          <Ionicons name="document-text" size={20} color={theme.colors.primary} />
         </View>
         <View style={styles.flex1}>
-          <Text style={typography.h3} numberOfLines={1}>{item.originalName || "Prescription"}</Text>
-          <Text style={typography.caption}>{formatDate(item.createdAt)}</Text>
+          <Text style={[themedStyles.title, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+            {item.originalName || "Prescription"}
+          </Text>
+          <Text style={[themedStyles.meta, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+            {formatDate(item.createdAt)}
+            {medicineCount !== null ? `  ·  ${medicineCount} medicine${medicineCount === 1 ? "" : "s"}` : ""}
+          </Text>
         </View>
-        <Badge status={item.status} />
-      </Card>
+        <ThemedBadge status={item.status} />
+        <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} style={themedStyles.chevron} />
+      </ThemedCard>
     </Pressable>
   );
 }
 
 export function MedicineCard({ item, onPress }) {
+  const { theme } = useTheme();
+  const needsReview = item.needsReview && !item.confirmedByUser;
   return (
-    <Pressable onPress={onPress}>
-      <Card style={styles.rowCard}>
-        <View style={[styles.iconBox, { backgroundColor: "rgba(45,212,191,0.12)" }]}>
-          <Ionicons name="medical" size={20} color={colors.signal[400]} />
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+      <ThemedCard style={themedStyles.rowCard}>
+        <View style={[themedStyles.iconBox, { backgroundColor: `${theme.colors.teal}17` }]}>
+          <Ionicons name="medical" size={20} color={theme.colors.teal} />
         </View>
         <View style={styles.flex1}>
-          <Text style={typography.h3} numberOfLines={1}>{item.name}</Text>
-          <Text style={typography.caption} numberOfLines={1}>
+          <Text style={[themedStyles.title, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={[themedStyles.meta, { color: theme.colors.textSecondary }]} numberOfLines={1}>
             {[item.dosage, item.frequency].filter(Boolean).join(" · ") || "No dosage info"}
           </Text>
         </View>
-        {item.needsReview && !item.confirmedByUser ? (
-          <Badge status="needs_review" label="Review" />
-        ) : null}
-      </Card>
+        {needsReview ? <ThemedBadge status="needs_review" label="Review" /> : null}
+        <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} style={themedStyles.chevron} />
+      </ThemedCard>
     </Pressable>
   );
 }
 
-export function LabResultRow({ result }) {
-  return (
-    <View style={styles.labRow}>
-      <View style={styles.flex1}>
-        <Text style={styles.labName}>{result.testName}</Text>
-        <Text style={typography.caption}>
-          {result.value ? `${result.value}${result.unit ? " " + result.unit : ""}` : "—"}
-          {result.referenceRange ? `  ·  Ref: ${result.referenceRange}` : ""}
-        </Text>
-      </View>
-      <Badge status={result.status} />
-    </View>
-  );
-}
+// ----------------------------------------------------------------------------
+// Theme-aware Lab Report card + Health Timeline event row.
+// ----------------------------------------------------------------------------
 
-export function ReminderCard({ item, onMark, onPress }) {
-  return (
-    <Pressable onPress={() => onPress?.(item)} disabled={!onPress}>
-      <Card style={styles.rowCard}>
-        <View style={[styles.iconBox, { backgroundColor: "rgba(96,165,250,0.12)" }]}>
-          <Ionicons name="alarm" size={20} color={colors.brand[400]} />
-        </View>
-        <View style={styles.flex1}>
-          <Text style={typography.h3} numberOfLines={1}>{item.medicineName}</Text>
-          <Text style={typography.caption}>
-            {item.dosage ? `${item.dosage} · ` : ""}
-            {formatTime(item.scheduledFor)}
-          </Text>
-        </View>
-        {item.status === "due" || item.status === "pending" ? (
-          <Pressable onPress={() => onMark?.(item, "taken")} style={styles.markButton}>
-            <Ionicons name="checkmark" size={18} color={colors.white} />
-          </Pressable>
-        ) : (
-          <Badge status={item.status} />
-        )}
-      </Card>
-    </Pressable>
-  );
-}
-
-const EVENT_ICONS = {
-  prescriptions: "document-text",
-  medicines: "medical",
-  labReports: "flask",
-  reminders: "alarm",
+// Report-level processing status -> a short, human status word for the list
+// card. Falls back to the raw status so nothing is ever silently hidden.
+const REPORT_STATUS_LABEL = {
+  processing: "Processing",
+  needs_review: "Needs review",
+  processed: "Analyzed",
+  failed: "Failed",
+  pending: "Pending",
 };
 
-export function TimelineItem({ event }) {
+// Counts how many of a report's already-fetched per-test results are
+// outside normal range, purely from real data already present on the item
+// (never fetched or fabricated here). Returns null when there's nothing to
+// summarize so the caller can omit the line entirely.
+function summarizeAbnormalResults(results) {
+  if (!Array.isArray(results) || results.length === 0) return null;
+  const abnormal = results.filter((r) =>
+    ["above_range", "below_range", "moderate", "severe"].includes(r.status)
+  ).length;
+  if (abnormal === 0) return "All results in range";
+  return `${abnormal} of ${results.length} need attention`;
+}
+
+export function LabReportCard({ item, onPress }) {
+  const { theme } = useTheme();
+  const abnormalSummary = summarizeAbnormalResults(item.results);
+  const testCount = Array.isArray(item.results) ? item.results.length : null;
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+      <ThemedCard style={themedStyles.rowCard}>
+        <View style={[themedStyles.iconBox, { backgroundColor: `${theme.colors.teal}17` }]}>
+          <Ionicons name="flask" size={20} color={theme.colors.teal} />
+        </View>
+        <View style={styles.flex1}>
+          <Text style={[themedStyles.title, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+            {item.labName || item.originalName || "Lab Report"}
+          </Text>
+          <Text style={[themedStyles.meta, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+            {formatDate(item.createdAt)}
+            {testCount ? `  ·  ${testCount} test${testCount === 1 ? "" : "s"}` : ""}
+          </Text>
+          {abnormalSummary ? (
+            <Text
+              style={[
+                themedStyles.summary,
+                { color: abnormalSummary.startsWith("All") ? theme.colors.teal : theme.colors.orange },
+              ]}
+              numberOfLines={1}
+            >
+              {abnormalSummary}
+            </Text>
+          ) : null}
+        </View>
+        <ThemedBadge status={item.status} label={REPORT_STATUS_LABEL[item.status]} />
+        <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} style={themedStyles.chevron} />
+      </ThemedCard>
+    </Pressable>
+  );
+}
+
+const TIMELINE_EVENT_STYLE = {
+  prescriptions: { icon: "document-text", colorKey: "primary" },
+  medicines: { icon: "medical", colorKey: "teal" },
+  labReports: { icon: "flask", colorKey: "purple" },
+  reminders: { icon: "alarm", colorKey: "orange" },
+};
+
+export function ThemedTimelineItem({ event, isLast }) {
+  const { theme } = useTheme();
+  const cfg = TIMELINE_EVENT_STYLE[event.type] || { icon: "ellipse", colorKey: "primary" };
+  const color = theme.colors[cfg.colorKey] || theme.colors.primary;
+
   return (
     <View style={styles.timelineRow}>
       <View style={styles.timelineIconWrap}>
-        <View style={styles.timelineIcon}>
-          <Ionicons name={EVENT_ICONS[event.type] || "ellipse"} size={16} color={colors.signal[400]} />
+        <View
+          style={[
+            themedStyles.timelineIcon,
+            { backgroundColor: `${color}17`, borderColor: `${color}40` },
+          ]}
+        >
+          <Ionicons name={cfg.icon} size={15} color={color} />
         </View>
-        <View style={styles.timelineLine} />
+        {!isLast ? <View style={[styles.timelineLine, { backgroundColor: theme.colors.border }]} /> : null}
       </View>
       <View style={[styles.flex1, styles.timelineContent]}>
-        <Text style={typography.body}>{event.detail || event.kind}</Text>
-        <Text style={typography.caption}>{formatDate(event.date)} · {formatTime(event.date)}</Text>
+        <Text style={[themedStyles.title, { color: theme.colors.textPrimary }]}>
+          {event.detail || event.kind}
+        </Text>
+        <Text style={[themedStyles.meta, { color: theme.colors.textSecondary }]}>
+          {formatTime(event.date)}
+        </Text>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  rowCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.sm },
-  iconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(59,130,246,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  flex1: { flex: 1 },
-  labRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-  },
-  labName: { color: colors.white, fontSize: 14, fontWeight: "600" },
-  markButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.signal[500],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  timelineRow: { flexDirection: "row" },
-  timelineIconWrap: { alignItems: "center", width: 32 },
+const themedStyles = StyleSheet.create({
+  rowCard: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10, paddingVertical: 12 },
+  iconBox: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 15, fontWeight: "600" },
+  meta: { fontSize: 12.5, marginTop: 2 },
+  summary: { fontSize: 12.5, marginTop: 3, fontWeight: "600" },
+  chevron: { marginLeft: 2 },
   timelineIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.ink[800],
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1,
-    borderColor: "rgba(45,212,191,0.3)",
     alignItems: "center",
     justifyContent: "center",
   },
-  timelineLine: { flex: 1, width: 1, backgroundColor: "rgba(255,255,255,0.08)", marginVertical: 2 },
-  timelineContent: { paddingBottom: spacing.lg },
 });
 
-export default { PrescriptionCard, MedicineCard, LabResultRow, ReminderCard, TimelineItem };
+const styles = StyleSheet.create({
+  pressed: { opacity: 0.85 },
+  flex1: { flex: 1 },
+  timelineRow: { flexDirection: "row" },
+  timelineIconWrap: { alignItems: "center", width: 32 },
+  timelineLine: { flex: 1, width: 1, marginVertical: 2 },
+  timelineContent: { paddingBottom: 16 },
+});
+
+// ----------------------------------------------------------------------------
+// Theme-aware reminder card, used by the Reminders screens (list + history).
+// Status (upcoming/taken/missed) always comes from getDisplayStatus(item.status)
+// — the same real dose-tracking status the rest of the app already uses,
+// never invented here.
+// ----------------------------------------------------------------------------
+
+function formatTimeThemed(d) {
+  if (!d) return "";
+  return new Date(d).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * item: a real occurrence from services/doseTracking.js
+ *   { reminderId, medicineName, dosage, scheduledFor, status, frequency? }
+ * highlight: renders the "Next dose" hero treatment (larger, accent border).
+ */
+export function ThemedReminderCard({ item, onMark, onPress, highlight = false }) {
+  const { theme } = useTheme();
+  const displayStatus = getDisplayStatus(item.status);
+  const statusIconColor =
+    displayStatus === "taken" ? theme.colors.teal : displayStatus === "missed" ? theme.colors.error : theme.colors.primary;
+
+  return (
+    <Pressable onPress={() => onPress?.(item)} disabled={!onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+      <ThemedCard
+        variant={highlight ? "elevated" : "surface"}
+        style={[
+          themedReminderStyles.card,
+          highlight && { borderColor: theme.colors.primary, borderWidth: 1.5 },
+        ]}
+      >
+        <View style={themedReminderStyles.row}>
+          <View style={[themedReminderStyles.iconBox, { backgroundColor: `${statusIconColor}17` }]}>
+            <Ionicons name="alarm" size={highlight ? 24 : 20} color={statusIconColor} />
+          </View>
+          <View style={styles.flex1}>
+            {highlight ? (
+              <Text style={[themedReminderStyles.eyebrow, { color: theme.colors.primary }]}>NEXT DOSE</Text>
+            ) : null}
+            <Text
+              style={[
+                highlight ? themedReminderStyles.titleLg : themedReminderStyles.title,
+                { color: theme.colors.textPrimary },
+              ]}
+              numberOfLines={1}
+            >
+              {item.medicineName}
+            </Text>
+            <Text style={[themedReminderStyles.meta, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+              {item.dosage ? `${item.dosage} · ` : ""}
+              {formatTimeThemed(item.scheduledFor)}
+              {item.frequency ? ` · ${item.frequency}` : ""}
+            </Text>
+            <View style={themedReminderStyles.statusRow}>
+              <ThemedBadge status={displayStatus} />
+            </View>
+          </View>
+          {displayStatus === "upcoming" && onMark ? (
+            <Pressable
+              onPress={() => onMark(item, "taken")}
+              style={[themedReminderStyles.markButton, { backgroundColor: theme.colors.teal }]}
+              hitSlop={6}
+            >
+              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
+        </View>
+      </ThemedCard>
+    </Pressable>
+  );
+}
+
+const themedReminderStyles = StyleSheet.create({
+  card: { marginBottom: 10 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12 },
+  iconBox: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  eyebrow: { fontSize: 11, fontWeight: "700", letterSpacing: 0.6, marginBottom: 2 },
+  title: { fontSize: 15, fontWeight: "600" },
+  titleLg: { fontSize: 18, fontWeight: "700" },
+  meta: { fontSize: 12.5, marginTop: 2 },
+  statusRow: { marginTop: 6, flexDirection: "row" },
+  markButton: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+});
+
+export default {
+  PrescriptionCard,
+  MedicineCard,
+  LabReportCard,
+  ThemedTimelineItem,
+  ThemedReminderCard,
+};

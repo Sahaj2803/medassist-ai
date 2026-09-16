@@ -4,15 +4,18 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
-import Screen from "../../components/ui/Screen";
-import Card from "../../components/ui/Card";
-import Button from "../../components/ui/Button";
+import Screen from "../../components/ui/themed/Screen";
+import Card from "../../components/ui/themed/Card";
+import Button from "../../components/ui/themed/Button";
+import useThemedHeader from "../../hooks/useThemedHeader";
+import { useTheme } from "../../context/ThemeContext";
 import labReportApi from "../../services/labReportApi";
 import { getErrorMessage } from "../../services/api";
-import { colors, typography, spacing, radii } from "../../constants/theme";
 
 export default function UploadLabReportScreen() {
+  useThemedHeader();
   const router = useRouter();
+  const { theme } = useTheme();
   const [asset, setAsset] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -70,7 +73,7 @@ export default function UploadLabReportScreen() {
 
   return (
     <Screen>
-      <Text style={typography.bodyMuted}>
+      <Text style={[styles.intro, { color: theme.colors.textSecondary }]}>
         Upload a photo or file of your lab report. MedAssist's AI will extract the test
         results and explain what they mean.
       </Text>
@@ -79,8 +82,12 @@ export default function UploadLabReportScreen() {
         <Card style={styles.previewCard}>
           {isPdf ? (
             <View style={styles.pdfPreview}>
-              <Ionicons name="document" size={40} color={colors.brand[400]} />
-              <Text style={typography.body} numberOfLines={1}>{asset.name || "document.pdf"}</Text>
+              <View style={[styles.pdfIconWrap, { backgroundColor: `${theme.colors.primary}17` }]}>
+                <Ionicons name="document" size={32} color={theme.colors.primary} />
+              </View>
+              <Text style={[styles.pdfName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+                {asset.name || "document.pdf"}
+              </Text>
             </View>
           ) : (
             <Image source={{ uri: asset.uri }} style={styles.previewImage} resizeMode="cover" />
@@ -89,27 +96,44 @@ export default function UploadLabReportScreen() {
         </Card>
       ) : (
         <View style={styles.pickerGrid}>
-          <Pressable style={styles.pickerTile} onPress={pickFromCamera}>
-            <Ionicons name="camera" size={28} color={colors.signal[400]} />
-            <Text style={styles.pickerLabel}>Camera</Text>
+          <Pressable
+            style={[styles.pickerTile, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            onPress={pickFromCamera}
+          >
+            <View style={[styles.pickerIconWrap, { backgroundColor: `${theme.colors.teal}17` }]}>
+              <Ionicons name="camera" size={24} color={theme.colors.teal} />
+            </View>
+            <Text style={[styles.pickerLabel, { color: theme.colors.textPrimary }]}>Camera</Text>
           </Pressable>
-          <Pressable style={styles.pickerTile} onPress={pickFromGallery}>
-            <Ionicons name="images" size={28} color={colors.signal[400]} />
-            <Text style={styles.pickerLabel}>Gallery</Text>
+          <Pressable
+            style={[styles.pickerTile, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            onPress={pickFromGallery}
+          >
+            <View style={[styles.pickerIconWrap, { backgroundColor: `${theme.colors.teal}17` }]}>
+              <Ionicons name="images" size={24} color={theme.colors.teal} />
+            </View>
+            <Text style={[styles.pickerLabel, { color: theme.colors.textPrimary }]}>Gallery</Text>
           </Pressable>
-          <Pressable style={styles.pickerTile} onPress={pickFromFiles}>
-            <Ionicons name="folder" size={28} color={colors.signal[400]} />
-            <Text style={styles.pickerLabel}>Files</Text>
+          <Pressable
+            style={[styles.pickerTile, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            onPress={pickFromFiles}
+          >
+            <View style={[styles.pickerIconWrap, { backgroundColor: `${theme.colors.teal}17` }]}>
+              <Ionicons name="folder" size={24} color={theme.colors.teal} />
+            </View>
+            <Text style={[styles.pickerLabel, { color: theme.colors.textPrimary }]}>Files</Text>
           </Pressable>
         </View>
       )}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: theme.colors.error }]}>{error}</Text> : null}
 
       {uploading ? (
         <View style={styles.uploadingBox}>
-          <ActivityIndicator color={colors.signal[400]} />
-          <Text style={typography.bodyMuted}>Uploading{progress ? ` · ${progress}%` : "..."}</Text>
+          <ActivityIndicator color={theme.colors.primary} />
+          <Text style={[styles.uploadingText, { color: theme.colors.textSecondary }]}>
+            Uploading{progress ? ` · ${progress}%` : "..."}
+          </Text>
         </View>
       ) : (
         <Button title="Upload lab report" onPress={handleUpload} disabled={!asset} style={styles.spacedTop} />
@@ -119,22 +143,25 @@ export default function UploadLabReportScreen() {
 }
 
 const styles = StyleSheet.create({
-  pickerGrid: { flexDirection: "row", gap: spacing.md, marginTop: spacing.xl },
+  intro: { fontSize: 14, lineHeight: 20 },
+  pickerGrid: { flexDirection: "row", gap: 12, marginTop: 24 },
   pickerTile: {
     flex: 1,
-    backgroundColor: colors.ink[800],
-    borderRadius: radii.lg,
-    paddingVertical: spacing.xl,
+    borderRadius: 18,
+    paddingVertical: 22,
     alignItems: "center",
-    gap: spacing.sm,
+    gap: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
   },
-  pickerLabel: { color: colors.mist[100], fontWeight: "600", fontSize: 13 },
-  previewCard: { marginTop: spacing.xl, gap: spacing.sm },
-  previewImage: { width: "100%", height: 220, borderRadius: radii.md },
-  pdfPreview: { alignItems: "center", gap: spacing.sm, paddingVertical: spacing.xl },
-  error: { color: colors.alert[400], marginTop: spacing.md, fontSize: 13 },
-  uploadingBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xl, justifyContent: "center" },
-  spacedTop: { marginTop: spacing.xl },
+  pickerIconWrap: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  pickerLabel: { fontWeight: "600", fontSize: 13 },
+  previewCard: { marginTop: 24, gap: 10 },
+  previewImage: { width: "100%", height: 220, borderRadius: 14 },
+  pdfPreview: { alignItems: "center", gap: 10, paddingVertical: 24 },
+  pdfIconWrap: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
+  pdfName: { fontSize: 14, fontWeight: "600" },
+  error: { marginTop: 14, fontSize: 13 },
+  uploadingBox: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 24, justifyContent: "center" },
+  uploadingText: { fontSize: 14 },
+  spacedTop: { marginTop: 24 },
 });

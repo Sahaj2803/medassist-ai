@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import Reminder from "../models/Reminder.js";
 import { sendReminderEmail } from "./emailService.js";
-import { currentHHmm, todayAt } from "../utils/timezone.js";
+import { currentHHmm, todayAt, startOfToday } from "../utils/timezone.js";
 
 // A "due" dose that's never marked taken becomes "missed" after this
 // long, so the dashboard doesn't show an old dose as still "due".
@@ -25,11 +25,12 @@ async function dispatchDueReminders() {
   const now = new Date();
 
   const windowStart = new Date(now.getTime() - CATCH_UP_WINDOW_MS);
+  const todayStart = startOfToday(now);
 
   const reminders = await Reminder.find({
     active: true,
     startDate: { $lte: now },
-    $or: [{ endDate: null }, { endDate: { $gte: now } }],
+    $or: [{ endDate: null }, { endDate: { $gte: todayStart } }],
   }).populate("user", "name email phone");
 
   for (const reminder of reminders) {

@@ -1,18 +1,22 @@
 import { useState } from "react";
-import { View, Text, StyleSheet, Image, ActivityIndicator, Pressable } from "react-native";
+import { View, Text, StyleSheet, Image, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
-import Screen from "../../components/ui/Screen";
-import Card from "../../components/ui/Card";
-import Button from "../../components/ui/Button";
+import { LinearGradient } from "expo-linear-gradient";
+import Screen from "../../components/ui/themed/Screen";
+import Card from "../../components/ui/themed/Card";
+import Button from "../../components/ui/themed/Button";
 import prescriptionApi from "../../services/prescriptionApi";
 import { getErrorMessage } from "../../services/api";
-import { colors, typography, spacing, radii } from "../../constants/theme";
+import { useTheme } from "../../context/ThemeContext";
+import useThemedHeader from "../../hooks/useThemedHeader";
 
 export default function UploadPrescriptionScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
+  useThemedHeader();
   const [asset, setAsset] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -70,17 +74,29 @@ export default function UploadPrescriptionScreen() {
 
   return (
     <Screen>
-      <Text style={typography.bodyMuted}>
-        Take a photo, choose from your gallery, or pick a file. MedAssist's AI will read the
-        medicines, dosages, and instructions automatically.
-      </Text>
+      <Card variant="glass" style={styles.introCard}>
+        <View style={styles.introRow}>
+          <View style={[styles.introIcon, { backgroundColor: `${theme.colors.primary}22` }]}>
+            <Ionicons name="scan" size={22} color={theme.colors.primary} />
+          </View>
+          <View style={styles.flex1}>
+            <Text style={[styles.introTitle, { color: theme.colors.textPrimary }]}>Scan your prescription</Text>
+            <Text style={[styles.introBody, { color: theme.colors.textSecondary }]}>
+              Take a photo, choose from your gallery, or pick a file. MedAssist's AI reads the medicines, dosages,
+              and instructions for you.
+            </Text>
+          </View>
+        </View>
+      </Card>
 
       {asset ? (
         <Card style={styles.previewCard}>
           {isPdf ? (
-            <View style={styles.pdfPreview}>
-              <Ionicons name="document" size={40} color={colors.brand[400]} />
-              <Text style={typography.body} numberOfLines={1}>{asset.name || "document.pdf"}</Text>
+            <View style={[styles.pdfPreview, { backgroundColor: `${theme.colors.primary}12` }]}>
+              <Ionicons name="document" size={36} color={theme.colors.primary} />
+              <Text style={[styles.pdfName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+                {asset.name || "document.pdf"}
+              </Text>
             </View>
           ) : (
             <Image source={{ uri: asset.uri }} style={styles.previewImage} resizeMode="cover" />
@@ -89,28 +105,29 @@ export default function UploadPrescriptionScreen() {
         </Card>
       ) : (
         <View style={styles.pickerGrid}>
-          <Pressable style={styles.pickerTile} onPress={pickFromCamera}>
-            <Ionicons name="camera" size={28} color={colors.signal[400]} />
-            <Text style={styles.pickerLabel}>Camera</Text>
-          </Pressable>
-          <Pressable style={styles.pickerTile} onPress={pickFromGallery}>
-            <Ionicons name="images" size={28} color={colors.signal[400]} />
-            <Text style={styles.pickerLabel}>Gallery</Text>
-          </Pressable>
-          <Pressable style={styles.pickerTile} onPress={pickFromFiles}>
-            <Ionicons name="folder" size={28} color={colors.signal[400]} />
-            <Text style={styles.pickerLabel}>Files</Text>
-          </Pressable>
+          <PickerTile icon="camera" label="Camera" onPress={pickFromCamera} theme={theme} />
+          <PickerTile icon="images" label="Gallery" onPress={pickFromGallery} theme={theme} />
+          <PickerTile icon="folder" label="Files" onPress={pickFromFiles} theme={theme} />
         </View>
       )}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <View style={[styles.errorBox, { backgroundColor: `${theme.colors.error}14`, borderColor: `${theme.colors.error}33` }]}>
+          <Ionicons name="alert-circle" size={16} color={theme.colors.error} />
+          <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
+        </View>
+      ) : null}
 
       {uploading ? (
-        <View style={styles.uploadingBox}>
-          <ActivityIndicator color={colors.signal[400]} />
-          <Text style={typography.bodyMuted}>Uploading{progress ? ` · ${progress}%` : "..."}</Text>
-        </View>
+        <Card style={styles.uploadingCard}>
+          <Text style={[styles.uploadingTitle, { color: theme.colors.textPrimary }]}>Uploading your prescription</Text>
+          <View style={[styles.progressTrack, { backgroundColor: theme.colors.border }]}>
+            <View style={[styles.progressFill, { width: `${Math.max(progress, 6)}%`, backgroundColor: theme.colors.primary }]} />
+          </View>
+          <Text style={[styles.uploadingCaption, { color: theme.colors.textSecondary }]}>
+            {progress ? `${progress}%` : "Starting..."}
+          </Text>
+        </Card>
       ) : (
         <Button title="Upload prescription" onPress={handleUpload} disabled={!asset} style={styles.spacedTop} />
       )}
@@ -118,23 +135,38 @@ export default function UploadPrescriptionScreen() {
   );
 }
 
+function PickerTile({ icon, label, onPress, theme }) {
+  return (
+    <Pressable style={({ pressed }) => [styles.pickerTile, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, pressed && { opacity: 0.85 }]} onPress={onPress}>
+      <LinearGradient colors={theme.gradients.teal} style={styles.pickerIconWrap} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+        <Ionicons name={icon} size={22} color="#FFFFFF" />
+      </LinearGradient>
+      <Text style={[styles.pickerLabel, { color: theme.colors.textPrimary }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  pickerGrid: { flexDirection: "row", gap: spacing.md, marginTop: spacing.xl },
-  pickerTile: {
-    flex: 1,
-    backgroundColor: colors.ink[800],
-    borderRadius: radii.lg,
-    paddingVertical: spacing.xl,
-    alignItems: "center",
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-  },
-  pickerLabel: { color: colors.mist[100], fontWeight: "600", fontSize: 13 },
-  previewCard: { marginTop: spacing.xl, gap: spacing.sm },
-  previewImage: { width: "100%", height: 220, borderRadius: radii.md },
-  pdfPreview: { alignItems: "center", gap: spacing.sm, paddingVertical: spacing.xl },
-  error: { color: colors.alert[400], marginTop: spacing.md, fontSize: 13 },
-  uploadingBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xl, justifyContent: "center" },
-  spacedTop: { marginTop: spacing.xl },
+  flex1: { flex: 1 },
+  introCard: { marginBottom: 4 },
+  introRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
+  introIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  introTitle: { fontSize: 16, fontWeight: "700", marginBottom: 4 },
+  introBody: { fontSize: 13.5, lineHeight: 19 },
+  pickerGrid: { flexDirection: "row", gap: 12, marginTop: 20 },
+  pickerTile: { flex: 1, borderRadius: 18, paddingVertical: 22, alignItems: "center", gap: 10, borderWidth: 1 },
+  pickerIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  pickerLabel: { fontWeight: "600", fontSize: 13 },
+  previewCard: { marginTop: 20, gap: 10 },
+  previewImage: { width: "100%", height: 220, borderRadius: 14 },
+  pdfPreview: { alignItems: "center", gap: 8, paddingVertical: 28, borderRadius: 14 },
+  pdfName: { fontSize: 14, fontWeight: "600", maxWidth: "80%" },
+  errorBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 16, padding: 12, borderRadius: 12, borderWidth: 1 },
+  errorText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  uploadingCard: { marginTop: 20 },
+  uploadingTitle: { fontSize: 14, fontWeight: "600", marginBottom: 10 },
+  progressTrack: { height: 8, borderRadius: 4, overflow: "hidden" },
+  progressFill: { height: 8, borderRadius: 4 },
+  uploadingCaption: { fontSize: 12, marginTop: 8 },
+  spacedTop: { marginTop: 20 },
 });

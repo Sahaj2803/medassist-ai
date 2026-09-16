@@ -18,12 +18,17 @@ MongoDB, AI Gateway (Gemini + Groq)
 - **No Gemini/Groq keys in the app.** The mobile bundle only ever talks to
   the Express API; AI calls happen server-side exactly as they do for the
   web client.
-- **Email-only reminders.** The mobile app manages reminder *definitions*
-  (CRUD) and today's dose list via the existing `/api/reminders` routes.
-  Actual dose-time delivery is `backend/services/reminderScheduler.js`
-  (node-cron) + `emailService.js` and runs independent of whether the app
-  is open. No WhatsApp/Twilio code exists anywhere in this app or the
-  backend.
+- **Email reminders stay backend-driven.** The mobile app manages reminder
+  *definitions* (CRUD) and today's dose list via the existing
+  `/api/reminders` routes. Actual dose-time email delivery is
+  `backend/services/reminderScheduler.js` (node-cron) + `emailService.js`
+  and runs independent of whether the app is open. No WhatsApp/Twilio code
+  exists anywhere in this app or the backend.
+- **App notifications are scheduled entirely on-device.** In addition to
+  email, the app schedules local (Expo) notifications for each reminder
+  time — see `services/notificationScheduler.js`. This never touches the
+  backend or duplicates the email system; it's a second, independent
+  delivery channel for the same reminder.
 
 ## Authentication — how it works without browser cookies
 
@@ -116,13 +121,24 @@ npx expo start
 - iOS simulator → `http://localhost:5000/api`
 - Physical device (same Wi-Fi as your dev machine) → `http://<your-LAN-IP>:5000/api`
 
+## Part 3 — UI redesign (Lab Reports / Health Score / Health Timeline)
+
+Visual-only redesign of these three areas to match the premium healthcare
+SaaS look defined in the Part 3 brief, using the light/dark theme system
+already added in Part 2 (`context/ThemeContext.jsx`, `constants/theme.js`).
+No API, navigation, or business-logic changes — see
+`IMPLEMENTATION_STATUS.md` for the full file-by-file breakdown.
+
 ## Screens implemented
 
 Splash/auth-gate, Login, Register, Forgot Password, Dashboard, AI Health
 Score, AI Health Timeline, Prescriptions (list), Upload Prescription,
 Prescription Details, Medicines (list), Medicine Details, Lab Reports
-(list), Upload Lab Report, Lab Report Details, AI Chatbot, Reminders
-(today + create + edit/delete), Profile, Settings (language, password,
+(list), Upload Lab Report, Lab Report Details, AI Chatbot (with delete
+conversation), Reminders (today + Taken/Missed status + create/edit with
+start/optional end date + Dose History/adherence), Diet Guide (context
+summary, generate/regenerate, plan display, history, delete), Profile
+(with a direct Language option), Settings (language, password,
 notification info), Logout.
 
 Not built as a separate screen: standalone Drug Interaction screen —
@@ -133,7 +149,7 @@ support directly.
 
 ## Packages used
 
-Expo 52, expo-router 4, expo-secure-store, expo-image-picker,
+Expo SDK 54, expo-router 6, expo-secure-store, expo-image-picker,
 expo-document-picker, expo-linear-gradient, expo-blur (unused currently,
 kept for future glass-panel treatments), @expo/vector-icons,
 react-native-svg, react-native-safe-area-context, react-native-screens,
@@ -148,18 +164,24 @@ this scope, matching the "don't over-engineer" instruction.
 
 - **Not run.** This sandbox has no network access, so `npm install`,
   `expo start`, and an Android/EAS build could not actually be executed
-  or verified here. The code is written to a consistent, standard Expo
-  Router 52 + React Native 0.76 API surface, but treat first boot as
-  needing a normal debug pass (missing native module linking, RN version
-  drift, etc. are the most likely first issues).
+  or verified here. The code targets Expo SDK 54 + React Native 0.81 +
+  React 19 (see `package.json`), and has been through several rounds of
+  static audit, but treat first boot as needing a normal debug pass
+  (missing native module linking, platform quirks, etc. are the most
+  likely first issues).
 - `assets/icon.png`, `adaptive-icon.png`, `splash.png`, `favicon.png` are
   placeholder graphics (a simple teal ring + plus mark on the app's ink
   background), generated locally, not final brand assets — swap them for
   real ones before a production build.
 - Camera/gallery/file-picker permission flows are implemented per Expo's
   documented API but untested on-device.
-- No push notifications — reminders are intentionally email-only per your
-  instructions; there's no local/OS notification scheduling in this app.
+- Email reminders remain the primary, always-on delivery channel
+  (backend-driven, independent of the app being open). The app
+  additionally schedules on-device (local Expo) notifications as a
+  second, best-effort channel — see `services/notificationScheduler.js`
+  and the Architecture section above. There is no remote/push
+  notification service (no FCM/APNs registration) — only local
+  on-device scheduling and email.
 - Diet Guide has an API service (`services/dietApi.js`) but no screen yet
   — flagged as available for a future phase rather than silently dropped.
 - `eas.json`'s `extra.eas.projectId` in `app.json` is a placeholder —
