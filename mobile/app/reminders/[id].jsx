@@ -95,6 +95,10 @@ export default function ReminderDetailScreen() {
     }
     setSaving(true);
     try {
+      const askedNow = active && notificationPermission.status === "undetermined";
+      if (askedNow) {
+        await notificationPermission.request({ resync: false });
+      }
       const { reminder: updated } = await reminderApi.update(id, {
         times: cleanTimes,
         dosage: dosage.trim() || undefined,
@@ -108,14 +112,26 @@ export default function ReminderDetailScreen() {
       setTimes(updated.times);
       setStartDate(normalizeDateString(updated.startDate) || startDate);
       setEndDate(normalizeDateString(updated.endDate));
-      // Cancels whatever was previously scheduled for this reminder and
-      // schedules fresh notifications for the new times/active state —
-      // never duplicates the old ones. Non-fatal if it fails; email
-      // reminders (backend-side) are unaffected either way.
-      try {
-        await syncReminder(updated);
-      } catch {
-        // Ignore.
+      // Replaces whatever was previously scheduled for this reminder with
+      // the new times/active state (never duplicates). Email reminders
+      // (backend-side) are unaffected either way.
+      const result = await syncReminder(updated);
+      if (result.reason === "permission") {
+        if (updated.active && askedNow) {
+          Alert.alert(
+            "Notifications are off",
+            "Your changes are saved and email reminders continue. Turn on notifications in system settings to also get an alert on this phone.",
+            [
+              { text: "Not now", style: "cancel" },
+              { text: "Open Settings", onPress: () => notificationPermission.openSettings() },
+            ]
+          );
+        }
+      } else if (!result.ok) {
+        Alert.alert(
+          "Phone alert couldn't be scheduled",
+          "Your changes are saved and email reminders continue, but the alert on this phone could not be updated. Opening Reminders again will retry."
+        );
       }
     } catch (e) {
       setError(getErrorMessage(e));

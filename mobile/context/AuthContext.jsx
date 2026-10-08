@@ -2,6 +2,7 @@ import { createContext, useCallback, useEffect, useMemo, useState } from "react"
 import authApi from "../services/authApi";
 import secureStorage from "../utils/secureStorage";
 import { registerUnauthorizedHandler } from "../services/api";
+import { cancelAllScheduled } from "../services/notificationScheduler";
 
 export const AuthContext = createContext(null);
 
@@ -79,6 +80,14 @@ export function AuthProvider({ children }) {
       await authApi.logout();
     } catch {
       // Even if the server call fails (e.g. offline), still clear locally.
+    }
+    // Explicit sign-out: remove this device's scheduled medicine
+    // notifications so they can't fire for (or expose) the previous
+    // account. Backend reminders are untouched; login re-syncs.
+    try {
+      await cancelAllScheduled();
+    } catch {
+      // Logged inside the scheduler; never block sign-out.
     }
     await clearSession();
   }, [clearSession]);

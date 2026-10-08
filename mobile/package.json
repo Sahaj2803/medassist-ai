@@ -9,7 +9,8 @@
     "ios": "expo run:ios",
     "lint": "expo lint",
     "build:android:dev": "eas build --platform android --profile development",
-    "build:android:prod": "eas build --platform android --profile production"
+    "build:android:prod": "eas build --platform android --profile production",
+    "test": "node --import ./__tests__/register.mjs --test __tests__/*.test.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -1,20 +1,42 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { todayDateString, normalizeDateString } from "../utils/dateUtils";
+import {
+  ID_PREFIX,
+  MAX_SCHEDULED,
+  buildPlan,
+  notificationContent,
+  ownerOfIdentifier,
+  reminderPrefix,
+  signatureFor,
+} from "../utils/notificationPlan";
 
 // Local (on-device) scheduled notifications for medicine reminders.
-// This is entirely separate from — and additive to — the existing
-// backend email reminder system (services/reminderScheduler.js +
-// emailService.js on the server). Nothing here talks to email at all.
+// Entirely separate from the backend email reminders (reminderScheduler.js
+// + emailService.js on the server) — nothing here talks to email.
 //
-// Persisted map: { [reminderId]: { signature, notifIds: string[], times: string[] } }
-// `signature` captures everything that would change what's scheduled
-// (medicine name, dosage, times, active flag) so re-syncing a reminder
-// that hasn't actually changed is a no-op — this is what prevents
-// duplicate notifications on app restart, login, dashboard refresh, etc.
-const MAP_KEY = "medassist_notification_map_v1";
+// Public API is unchanged from earlier phases:
+//   getPermissionStatus, requestPermission, syncReminder, cancelReminder,
+//   syncAllReminders
+// plus: ensureNotificationChannel, cancelAllScheduled.
+//
+// ROOT CAUSE FIXED HERE: the old code scheduled with a CALENDAR trigger,
+// which expo-notifications only supports on iOS. On Android every
+// scheduleNotificationAsync() call threw, and the empty `catch {}` swallowed
+// it, so nothing was ever scheduled. We now use DAILY / DATE triggers
+// (supported on both platforms) and report failures instead of hiding them.
+//
+// Idempotency: every notification gets a deterministic identifier
+// ("med:<reminderId>:<slot>"). The OS scheduled list is the source of truth
+// for what exists; the AsyncStorage map is only a signature cache so an
+// unchanged reminder is a no-op. Losing the map can never create duplicates.
+
+const MAP_KEY = "medassist_notification_map_v2";
+const LEGACY_MAP_KEY = "medassist_notification_map_v1";
 const CHANNEL_ID = "medicine-reminders";
+const RECENT_WRITE_GUARD_MS = 60 * 1000;
+
+const recentlySynced = new Map(); // reminderId -> timestamp of last syncReminder
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -26,50 +48,79 @@ Notifications.setNotificationHandler({
   }),
 });
 
-async function ensureChannel() {
-  if (Platform.OS !== "android") return;
+// Never log medicine names / dosage / times — ids and error messages only.
+function warn(message, err, extra) {
+  console.warn(`[notifications] ${message}`, err?.message || "", extra || "");
+}
+
+// Serialise all scheduler operations so concurrent callers (login sync,
+// resume sync, create/edit screens) cannot interleave cancel/schedule.
+let chain = Promise.resolve();
+function runExclusive(fn) {
+  const run = chain.then(() => fn());
+  chain = run.catch(() => {});
+  return run;
+}
+
+// ---- channel + permission ----
+
+export async function ensureNotificationChannel() {
+  if (Platform.OS !== "android") return true;
   try {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: "Medicine Reminders",
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       sound: "default",
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC,
     });
-  } catch {
-    // Non-fatal — worst case the OS uses default channel settings.
+    return true;
+  } catch (e) {
+    warn("Could not create Android notification channel", e);
+    return false;
   }
 }
-
-// ---- permission ----
 
 export async function getPermissionStatus() {
   try {
     const { status } = await Notifications.getPermissionsAsync();
     return status; // 'granted' | 'denied' | 'undetermined'
-  } catch {
+  } catch (e) {
+    warn("Could not read notification permission", e);
     return "undetermined";
   }
 }
 
+/**
+ * Asks the OS for permission only when it can still be asked (never
+ * re-prompts after a permanent denial). On Android 13+ the system prompt
+ * only appears once a notification channel exists, so the channel is
+ * created first.
+ */
 export async function requestPermission() {
   try {
+    await ensureNotificationChannel();
     const current = await Notifications.getPermissionsAsync();
     if (current.status === "granted") return "granted";
     if (current.status === "denied" && current.canAskAgain === false) return "denied";
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } = await Notifications.requestPermissionsAsync({
+      ios: { allowAlert: true, allowBadge: false, allowSound: true },
+    });
     return status;
-  } catch {
+  } catch (e) {
+    warn("Notification permission request failed", e);
     return "denied";
   }
 }
 
-// ---- local map persistence ----
+// ---- local signature cache ----
 
 async function readMap() {
   try {
     const raw = await AsyncStorage.getItem(MAP_KEY);
     return raw ? JSON.parse(raw) : {};
-  } catch {
+  } catch (e) {
+    warn("Could not read notification cache (will rebuild)", e);
     return {};
   }
 }
@@ -77,180 +128,285 @@ async function readMap() {
 async function writeMap(map) {
   try {
     await AsyncStorage.setItem(MAP_KEY, JSON.stringify(map));
-  } catch {
-    // Non-fatal — worst case we re-schedule (harmlessly, since we always
-    // cancel-before-schedule) next time sync runs.
+  } catch (e) {
+    warn("Could not persist notification cache", e);
   }
 }
 
-function signatureFor(reminder) {
-  return JSON.stringify({
-    medicineName: reminder.medicineName || "",
-    dosage: reminder.dosage || "",
-    times: [...(reminder.times || [])].sort(),
-    active: !!reminder.active,
-    startDate: normalizeDateString(reminder.startDate),
-    endDate: normalizeDateString(reminder.endDate),
+async function dropLegacyMap() {
+  try {
+    await AsyncStorage.removeItem(LEGACY_MAP_KEY);
+  } catch {
+    // Best effort.
+  }
+}
+
+// ---- OS scheduled-notification helpers ----
+
+async function listManaged() {
+  try {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    // Ours: new-style identifiers, plus legacy ones from earlier builds
+    // (random UUID, but carrying data.reminderId).
+    return (all || []).filter(
+      (n) => n.identifier?.startsWith(ID_PREFIX) || n.content?.data?.reminderId
+    );
+  } catch (e) {
+    warn("Could not list scheduled notifications", e);
+    return null;
+  }
+}
+
+function ownerOf(n) {
+  return ownerOfIdentifier(n.identifier) || n.content?.data?.reminderId || null;
+}
+
+async function cancelNotifications(list) {
+  let failed = 0;
+  for (const n of list) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(n.identifier);
+    } catch (e) {
+      failed += 1;
+      warn("Could not cancel a scheduled notification", e);
+    }
+  }
+  return failed;
+}
+
+async function scheduleItem(reminder, item) {
+  const channel = Platform.OS === "android" ? { channelId: CHANNEL_ID } : {};
+  const { title, body } = notificationContent(reminder, item.time);
+  await Notifications.scheduleNotificationAsync({
+    identifier: item.identifier,
+    content: {
+      title,
+      body,
+      sound: "default",
+      data: {
+        type: "medicine-reminder",
+        reminderId: reminder._id,
+        scheduledTime: item.time,
+      },
+    },
+    trigger:
+      item.type === "daily"
+        ? {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: item.hour,
+            minute: item.minute,
+            ...channel,
+          }
+        : {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: item.date,
+            ...channel,
+          },
   });
 }
 
 /**
- * Part 8 — reminder date range. `startDate`/`endDate` come from the
- * existing backend reminder fields (see app/reminders/create.jsx and
- * [id].jsx); this just checks today's local date falls within them
- * before allowing a reminder to be (re)scheduled.
- *
- * Known limitation (documented, not silently glossed over): Expo's local
- * notification triggers have no "date range" concept — a CALENDAR
- * trigger with `repeats: true` just repeats daily forever once
- * scheduled. There is no cron/background job in this client-only app to
- * cancel it exactly at midnight on the end date. What this DOES
- * guarantee: a reminder is never scheduled in the first place before its
- * start date or after its end date has passed, and — because
- * `syncAllReminders` already runs on every app open/login (see
- * app/_layout.jsx) and `signatureFor` now includes both dates — the
- * very next time the app is opened on or after the end date, the stale
- * schedule is cancelled. The one edge case this can't cover is a
- * reminder whose end date passes while the app is never reopened that
- * day; the backend's independent, always-on email reminder is
- * unaffected either way.
+ * Brings the OS schedule for ONE reminder in line with its plan.
+ * ctx: { map, managed (array|null), granted, now, budget:{remaining} }
  */
-function isWithinDateRange(reminder, todayStr = todayDateString()) {
-  const start = normalizeDateString(reminder.startDate);
-  const end = normalizeDateString(reminder.endDate);
-  if (start && todayStr < start) return false;
-  if (end && todayStr > end) return false;
-  return true;
-}
+async function applyReminder(reminder, ctx) {
+  const id = reminder._id;
+  const mine = (ctx.managed || []).filter((n) => ownerOf(n) === id);
+  const plan = buildPlan(reminder, ctx.now);
 
-async function cancelForReminder(reminderId, map) {
-  const entry = map[reminderId];
-  if (!entry) return;
-  for (const notifId of entry.notifIds || []) {
+  if (!ctx.granted) {
+    await cancelNotifications(mine);
+    delete ctx.map[id];
+    return { ok: false, reason: "permission", scheduled: 0, failed: 0 };
+  }
+  if (plan.mode === "none") {
+    const failed = await cancelNotifications(mine);
+    delete ctx.map[id];
+    return { ok: failed === 0, reason: failed ? "error" : plan.reason, scheduled: 0, failed };
+  }
+
+  const items = plan.items.slice(0, Math.max(0, ctx.budget.remaining));
+  if (items.length < plan.items.length) {
+    warn("Notification budget reached; some upcoming occurrences were not scheduled");
+  }
+
+  const wantedIds = new Set(items.map((i) => i.identifier));
+  const sig = signatureFor(reminder, plan, ctx.now);
+  const entry = ctx.map[id];
+  const unchanged =
+    ctx.managed !== null &&
+    entry?.signature === sig &&
+    mine.length === items.length &&
+    mine.every((n) => wantedIds.has(n.identifier));
+
+  if (unchanged) {
+    ctx.budget.remaining -= items.length;
+    return { ok: true, reason: plan.reason, scheduled: items.length, failed: 0 };
+  }
+
+  await cancelNotifications(mine);
+  await ensureNotificationChannel();
+  let scheduled = 0;
+  let failed = 0;
+  for (const item of items) {
     try {
-      await Notifications.cancelScheduledNotificationAsync(notifId);
-    } catch {
-      // Already fired/cancelled/unknown — fine, it's gone either way.
+      await scheduleItem(reminder, item);
+      scheduled += 1;
+    } catch (e) {
+      failed += 1;
+      warn(`Scheduling failed for reminder ${id}`, e);
     }
   }
-  delete map[reminderId];
-}
-
-async function scheduleForReminder(reminder) {
-  const ids = [];
-  const body = reminder.dosage
-    ? `Time to take ${reminder.medicineName} ${reminder.dosage}`
-    : `Time to take ${reminder.medicineName}`;
-
-  for (const t of reminder.times || []) {
-    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(t || "");
-    if (!match) continue;
-    const hour = Number(match[1]);
-    const minute = Number(match[2]);
-    try {
-      const notifId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "💊 Medicine Reminder",
-          body,
-          sound: "default",
-          data: { reminderId: reminder._id, medicineName: reminder.medicineName, time: t },
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-          hour,
-          minute,
-          repeats: true,
-          ...(Platform.OS === "android" ? { channelId: CHANNEL_ID } : {}),
-        },
-      });
-      ids.push(notifId);
-    } catch {
-      // Skip this one slot rather than aborting the whole reminder.
-    }
-  }
-  return ids;
+  ctx.budget.remaining -= scheduled;
+  // Only cache the signature when everything succeeded, so a partial
+  // failure is retried on the next sync instead of looking "done".
+  if (failed === 0) ctx.map[id] = { signature: sig };
+  else delete ctx.map[id];
+  return {
+    ok: failed === 0,
+    reason: failed ? "error" : plan.reason,
+    scheduled,
+    failed,
+  };
 }
 
 /**
- * (Re)schedule local notifications for a single reminder. Always cancels
- * whatever was previously scheduled for this reminder ID first, so this is
- * safe to call after create, edit, or an active/inactive toggle without
- * ever producing duplicates.
+ * (Re)schedule local notifications for a single reminder. Safe after
+ * create, edit, or an active/inactive toggle: previous notifications for
+ * this reminder are replaced, never duplicated.
+ * Returns { ok, reason?, scheduled, failed } — callers must not show a
+ * success state when ok is false (reason: "permission" | "error").
  */
-export async function syncReminder(reminder) {
-  if (!reminder || !reminder._id) return;
-  const map = await readMap();
-  await cancelForReminder(reminder._id, map);
-
-  const granted = (await getPermissionStatus()) === "granted";
-  if (granted && reminder.active && isWithinDateRange(reminder) && (reminder.times || []).length > 0) {
-    await ensureChannel();
-    const notifIds = await scheduleForReminder(reminder);
-    map[reminder._id] = {
-      signature: signatureFor(reminder),
-      notifIds,
-      times: reminder.times,
-    };
+export function syncReminder(reminder, opts = {}) {
+  if (!reminder || !reminder._id) {
+    return Promise.resolve({ ok: false, reason: "invalid", scheduled: 0, failed: 0 });
   }
-  await writeMap(map);
+  return runExclusive(async () => {
+    try {
+      const now = opts.now || new Date();
+      const map = await readMap();
+      const managed = await listManaged();
+      const others = (managed || []).filter((n) => ownerOf(n) !== reminder._id).length;
+      const granted = (await getPermissionStatus()) === "granted";
+      const result = await applyReminder(reminder, {
+        map,
+        managed,
+        granted,
+        now,
+        budget: { remaining: Math.max(0, MAX_SCHEDULED - others) },
+      });
+      recentlySynced.set(reminder._id, Date.now());
+      await writeMap(map);
+      return result;
+    } catch (e) {
+      warn(`syncReminder failed for ${reminder._id}`, e);
+      return { ok: false, reason: "error", scheduled: 0, failed: 1 };
+    }
+  });
 }
 
 /** Cancel all local notifications for a reminder (e.g. after delete). */
-export async function cancelReminder(reminderId) {
-  if (!reminderId) return;
-  const map = await readMap();
-  await cancelForReminder(reminderId, map);
-  await writeMap(map);
+export function cancelReminder(reminderId) {
+  if (!reminderId) return Promise.resolve({ ok: true });
+  return runExclusive(async () => {
+    try {
+      const map = await readMap();
+      const managed = (await listManaged()) || [];
+      const failed = await cancelNotifications(managed.filter((n) => ownerOf(n) === reminderId));
+      delete map[reminderId];
+      recentlySynced.delete(reminderId);
+      await writeMap(map);
+      return { ok: failed === 0 };
+    } catch (e) {
+      warn(`cancelReminder failed for ${reminderId}`, e);
+      return { ok: false };
+    }
+  });
 }
 
 /**
- * Reconcile local schedules against the full, authoritative list of
- * reminders from the backend. Idempotent: a reminder whose signature
- * hasn't changed since the last sync is left untouched (no cancel, no
- * reschedule), and any reminder no longer present/active has its local
- * notifications cancelled. Safe to call on every app start, login, and
- * screen focus without ever creating duplicates.
+ * Reconcile local schedules against the full, authoritative backend list.
+ * Idempotent: unchanged reminders are left alone; anything scheduled for a
+ * reminder that is gone / disabled / ineligible (or left over from another
+ * account or an older build) is cancelled. Only call with a list that was
+ * successfully fetched — never with an empty list on a network error.
  */
-export async function syncAllReminders(reminders) {
-  const map = await readMap();
-  const granted = (await getPermissionStatus()) === "granted";
-  const seenIds = new Set();
+export function syncAllReminders(reminders, opts = {}) {
+  return runExclusive(async () => {
+    const summary = { ok: true, scheduled: 0, failed: 0, permission: "granted", cancelledOrphans: 0 };
+    try {
+      const now = opts.now || new Date();
+      const map = await readMap();
+      const managed = await listManaged();
+      const granted = (await getPermissionStatus()) === "granted";
+      summary.permission = granted ? "granted" : "not_granted";
+      const budget = { remaining: MAX_SCHEDULED };
+      const liveIds = new Set();
 
-  for (const reminder of reminders || []) {
-    if (!reminder || !reminder._id) continue;
-    seenIds.add(reminder._id);
-    const sig = signatureFor(reminder);
-    const existing = map[reminder._id];
-    const shouldBeScheduled =
-      granted && reminder.active && isWithinDateRange(reminder) && (reminder.times || []).length > 0;
+      for (const reminder of reminders || []) {
+        if (!reminder || !reminder._id) continue;
+        liveIds.add(reminder._id);
+        const r = await applyReminder(reminder, { map, managed, granted, now, budget });
+        summary.scheduled += r.scheduled;
+        summary.failed += r.failed;
+        if (!r.ok && r.reason === "error") summary.ok = false;
+      }
 
-    if (existing && existing.signature === sig && (shouldBeScheduled ? existing.notifIds?.length : true)) {
-      continue; // Nothing changed — leave the existing schedule alone.
+      // Orphans: scheduled locally but no longer in the backend list.
+      const guard = Date.now() - RECENT_WRITE_GUARD_MS;
+      const orphans = (managed || []).filter((n) => {
+        const owner = ownerOf(n);
+        if (liveIds.has(owner)) return false;
+        // A reminder created/edited moments ago may be newer than the list
+        // we were handed; don't cancel it based on stale data.
+        if ((recentlySynced.get(owner) || 0) > guard) return false;
+        return true;
+      });
+      summary.cancelledOrphans = orphans.length;
+      await cancelNotifications(orphans);
+      for (const id of Object.keys(map)) {
+        if (!liveIds.has(id) && !((recentlySynced.get(id) || 0) > guard)) delete map[id];
+      }
+
+      await writeMap(map);
+      await dropLegacyMap();
+      if (!granted) summary.ok = false;
+    } catch (e) {
+      warn("syncAllReminders failed", e);
+      summary.ok = false;
     }
+    return summary;
+  });
+}
 
-    await cancelForReminder(reminder._id, map);
-    if (shouldBeScheduled) {
-      await ensureChannel();
-      const notifIds = await scheduleForReminder(reminder);
-      map[reminder._id] = { signature: sig, notifIds, times: reminder.times };
+/**
+ * Logout policy: remove every locally scheduled medicine notification and
+ * the signature cache so a signed-out device never alerts for (or leaks the
+ * medicine names of) the previous account. Backend reminders are untouched;
+ * the next login re-syncs from the backend.
+ */
+export function cancelAllScheduled() {
+  return runExclusive(async () => {
+    try {
+      const managed = (await listManaged()) || [];
+      await cancelNotifications(managed);
+      recentlySynced.clear();
+      await writeMap({});
+      await dropLegacyMap();
+      return { ok: true };
+    } catch (e) {
+      warn("cancelAllScheduled failed", e);
+      return { ok: false };
     }
-  }
-
-  // Anything locally scheduled for a reminder that's gone (deleted, or
-  // just missing from this list) gets cleaned up — no orphan notifications.
-  for (const id of Object.keys(map)) {
-    if (!seenIds.has(id)) {
-      await cancelForReminder(id, map);
-    }
-  }
-
-  await writeMap(map);
+  });
 }
 
 export default {
   getPermissionStatus,
   requestPermission,
+  ensureNotificationChannel,
   syncReminder,
   cancelReminder,
   syncAllReminders,
+  cancelAllScheduled,
 };

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>MedAssist AI App Icon</title>
+<defs>
+  <linearGradient id="top" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2563EB"/><stop offset=".52" stop-color="#06B6D4"/><stop offset="1" stop-color="#10B981"/></linearGradient>
+  <linearGradient id="left" x1="0" y1="0" x2="1" y2=".8"><stop offset="0" stop-color="#2563EB"/><stop offset="1" stop-color="#06B6D4"/></linearGradient>
+  <linearGradient id="right" x1="0" y1="0" x2="1" y2=".8"><stop offset="0" stop-color="#06B6D4"/><stop offset="1" stop-color="#10B981"/></linearGradient>
+  <linearGradient id="bottom" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2563EB"/><stop offset="1" stop-color="#06B6D4"/></linearGradient>
+</defs>
+<rect width="1024" height="1024" rx="210" fill="#FFFFFF"/>
+<path d="M330 270 Q330 135 465 135 H565 Q700 135 700 270 V380 Q700 485 595 485 H430 Q330 485 330 385 Z" fill="url(#top)"/>
+<path d="M135 430 Q135 330 235 330 H365 Q470 330 470 435 V590 Q470 690 365 690 H235 Q135 690 135 590 Z" fill="url(#left)"/>
+<path d="M554 430 Q554 330 654 330 H789 Q889 330 889 430 V590 Q889 690 789 690 H654 Q554 690 554 590 Z" fill="url(#right)"/>
+<path d="M330 635 Q330 535 430 535 H595 Q700 535 700 640 V755 Q700 890 565 890 H465 Q330 890 330 755 Z" fill="url(#bottom)"/>
+<path d="M290 640 C330 555 385 505 465 470 C535 440 595 432 632 390 C650 369 661 343 678 322 C689 308 704 315 700 334 C689 383 664 421 626 448 C581 480 525 489 475 514 C413 545 378 591 354 640 Z" fill="#FFFFFF"/>
+<circle cx="615" cy="326" r="55" fill="#FFFFFF"/>
+<path d="M730 320 C741 276 779 245 805 244 C808 277 783 314 744 333 Q731 338 730 320 Z" fill="url(#right)"/>
+</svg>

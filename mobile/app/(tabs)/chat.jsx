@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -244,9 +245,25 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={90}>
+      {/*
+        Keyboard handling: Expo SDK 54 runs Android in edge-to-edge mode, where
+        the system no longer resizes the window for the keyboard (so
+        `softwareKeyboardLayoutMode: "resize"` has no effect), and the previous
+        `behavior={undefined}` on Android left nothing to lift the input. Use
+        "padding" on both platforms. No keyboardVerticalOffset is needed: this
+        view's parent (SafeAreaView) starts at the top of the screen, and
+        KeyboardAvoidingView measures its own frame, so the tab bar and header
+        are accounted for automatically on every device.
+      */}
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         {messages.length === 0 ? (
-          <View style={styles.flex}>
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.emptyContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
             <EmptyState
               icon="chatbubble-ellipses-outline"
               title="How can I help with your health today?"
@@ -270,15 +287,19 @@ export default function ChatScreen() {
                 </Pressable>
               ))}
             </View>
-          </View>
+          </ScrollView>
         ) : (
           <FlatList
             ref={listRef}
             data={messages}
             keyExtractor={(_, idx) => String(idx)}
             contentContainerStyle={styles.messagesList}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             renderItem={({ item }) => <ChatBubble message={item} />}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+            // The visible area shrinks when the keyboard opens; keep the latest message in view.
+            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
             ListFooterComponent={sending ? <TypingDots /> : null}
           />
         )}
@@ -370,6 +391,7 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
+  emptyContent: { flexGrow: 1 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, Image, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Image, ActivityIndicator, Alert } from "react-native";
 import { useLocalSearchParams, useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Screen from "../../components/ui/themed/Screen";
@@ -8,6 +8,8 @@ import Badge from "../../components/ui/themed/Badge";
 import Button from "../../components/ui/themed/Button";
 import { Loading, ErrorState } from "../../components/ui/themed/States";
 import prescriptionApi from "../../services/prescriptionApi";
+import reminderApi from "../../services/reminderApi";
+import { syncAllReminders } from "../../services/notificationScheduler";
 import { getErrorMessage } from "../../services/api";
 import { FILE_BASE_URL } from "../../constants/config";
 import { useTheme } from "../../context/ThemeContext";
@@ -27,6 +29,7 @@ export default function PrescriptionDetailScreen() {
   const [state, setState] = useState("loading");
   const [error, setError] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +62,46 @@ export default function PrescriptionDetailScreen() {
     }
   };
 
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await prescriptionApi.remove(id);
+    } catch (e) {
+      // 404 means it's already gone (e.g. deleted from another device) —
+      // the goal state is reached, so fall through and leave the screen.
+      if (e?.response?.status !== 404) {
+        setDeleting(false);
+        Alert.alert("Couldn't delete prescription", getErrorMessage(e));
+        return;
+      }
+    }
+
+    // The backend also removed this prescription's reminders. Re-sync the
+    // on-device notifications now (existing idempotent reconcile) so a
+    // deleted medicine can't still ping before the next app start.
+    try {
+      const { reminders } = await reminderApi.list();
+      await syncAllReminders(reminders || []);
+    } catch {
+      // Non-fatal — the same reconcile also runs on app start and when the
+      // Reminders screen opens.
+    }
+
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/prescriptions");
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Prescription?",
+      "This prescription will be permanently deleted, along with its extracted medicines and their reminders. This can't be undone. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: confirmDelete },
+      ]
+    );
+  };
+
   if (state === "loading") return <Screen><Loading /></Screen>;
   if (state === "error") return <Screen><ErrorState message={error} onRetry={load} /></Screen>;
 
@@ -83,6 +126,7 @@ export default function PrescriptionDetailScreen() {
             refresh in a bit if it's taking longer.
           </Text>
         </Card>
+        <Button title="Delete prescription" variant="danger" onPress={handleDelete} loading={deleting} style={styles.spacedTop} />
       </Screen>
     );
   }
@@ -186,6 +230,8 @@ export default function PrescriptionDetailScreen() {
           Uploaded {new Date(prescription.createdAt).toLocaleDateString()}
         </Text>
       </View>
+
+      <Button title="Delete prescription" variant="danger" onPress={handleDelete} loading={deleting} style={styles.spacedTop} />
     </Screen>
   );
 }

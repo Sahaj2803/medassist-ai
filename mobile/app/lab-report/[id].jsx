@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
-import { useLocalSearchParams, useFocusEffect } from "expo-router";
+import { View, Text, StyleSheet, Pressable, Alert } from "react-native";
+import { useLocalSearchParams, useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Screen from "../../components/ui/themed/Screen";
 import Card from "../../components/ui/themed/Card";
@@ -129,10 +129,12 @@ export default function LabReportDetailScreen() {
   useThemedHeader();
   const { theme } = useTheme();
   const { id } = useLocalSearchParams();
+  const router = useRouter();
   const [report, setReport] = useState(null);
   const [state, setState] = useState("loading");
   const [error, setError] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -162,6 +164,34 @@ export default function LabReportDetailScreen() {
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await labReportApi.remove(id);
+    } catch (e) {
+      // 404 means it's already gone (e.g. deleted from another device) —
+      // the goal state is reached, so fall through and leave the screen.
+      if (e?.response?.status !== 404) {
+        setDeleting(false);
+        Alert.alert("Couldn't delete lab report", getErrorMessage(e));
+        return;
+      }
+    }
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/lab-reports");
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Lab Report?",
+      "This lab report and its extracted results will be permanently deleted. This can't be undone. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: confirmDelete },
+      ]
+    );
   };
 
   if (state === "loading") return <Screen><Loading label="Loading report..." /></Screen>;
@@ -223,6 +253,8 @@ export default function LabReportDetailScreen() {
           </View>
         </Card>
       ) : null}
+
+      <Button title="Delete lab report" variant="danger" onPress={handleDelete} loading={deleting} style={styles.spacedTop} />
     </Screen>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { AppState } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -8,56 +9,82 @@ import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import useAuth from "../hooks/useAuth";
 import { Loading } from "../components/ui/themed/States";
 import { View, StyleSheet } from "react-native";
-import reminderApi from "../services/reminderApi";
-import { syncAllReminders } from "../services/notificationScheduler";
+import { ensureNotificationChannel } from "../services/notificationScheduler";
+import { syncRemindersFromBackend } from "../services/reminderNotificationSync";
 
 /**
  * Reconciles locally-scheduled notifications against the backend's
- * reminder list once per authenticated session-start. syncAllReminders is
- * idempotent (see services/notificationScheduler.js), so this is safe to
- * run on every cold start / login without ever duplicating notifications.
+ * reminder list after login / cold start and every time the app returns to
+ * the foreground (which also picks up notification permission granted in
+ * system settings). syncAllReminders is idempotent (deterministic
+ * notification ids), so repeated runs never duplicate anything.
  */
 function useReminderNotificationSync(isAuthenticated) {
   useEffect(() => {
-    if (!isAuthenticated) return;
-    (async () => {
-      try {
-        const { reminders } = await reminderApi.list();
-        await syncAllReminders(reminders || []);
-      } catch {
-        // Non-fatal — email reminders are unaffected, and this retries
-        // naturally on the next app start/login.
-      }
-    })();
+    // Android needs the channel to exist before the permission prompt and
+    // before anything is scheduled.
+    ensureNotificationChannel();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    syncRemindersFromBackend({ force: true });
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") syncRemindersFromBackend();
+    });
+    return () => sub.remove();
   }, [isAuthenticated]);
 }
 
+// Survives re-mounts so the same tapped notification is never handled twice.
+let lastHandledResponseKey = null;
+
+function responseKey(response) {
+  const req = response?.notification?.request;
+  return `${req?.identifier || ""}|${response?.notification?.date || ""}|${response?.actionIdentifier || ""}`;
+}
+
 /**
- * Handles taps on a delivered notification by opening that reminder's
- * detail screen, mirroring how the rest of the app navigates to a
- * reminder (see app/reminders/[id].jsx).
+ * Tapping a medicine notification opens the Reminders screen, which lists
+ * today's doses with the existing Taken / Missed controls. Opening the
+ * notification never marks anything as taken. Taps that arrive before the
+ * user is signed in (cold start) are held and handled after login.
  */
-function useNotificationTapNavigation() {
+function useNotificationTapNavigation(isAuthenticated) {
   const router = useRouter();
-  const responseListener = useRef();
+  const authRef = useRef(isAuthenticated);
+  const pendingRef = useRef(null);
+  authRef.current = isAuthenticated;
+
+  const open = useRef(null);
+  open.current = (response) => {
+    if (response?.notification?.request?.content?.data?.type !== "medicine-reminder") return;
+    const key = responseKey(response);
+    if (key === lastHandledResponseKey) return;
+    if (!authRef.current) {
+      pendingRef.current = response;
+      return;
+    }
+    lastHandledResponseKey = key;
+    // Small delay so the navigator is mounted when launched from a tap.
+    setTimeout(() => router.push("/reminders"), 250);
+  };
 
   useEffect(() => {
-    // Covers the case where the app was launched *by* tapping a
-    // notification (cold start), not just taps while already running.
-    Notifications.getLastNotificationResponseAsync().then((response) => {
-      const reminderId = response?.notification?.request?.content?.data?.reminderId;
-      if (reminderId) router.push(`/reminders/${reminderId}`);
-    });
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => response && open.current(response))
+      .catch((e) => console.warn("[notifications] Could not read launch notification", e?.message || ""));
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => open.current(response));
+    return () => sub.remove();
+  }, []);
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      const reminderId = response?.notification?.request?.content?.data?.reminderId;
-      if (reminderId) router.push(`/reminders/${reminderId}`);
-    });
-
-    return () => {
-      responseListener.current?.remove();
-    };
-  }, [router]);
+  useEffect(() => {
+    if (isAuthenticated && pendingRef.current) {
+      const response = pendingRef.current;
+      pendingRef.current = null;
+      open.current(response);
+    }
+  }, [isAuthenticated]);
 }
 
 /**
@@ -72,7 +99,7 @@ function AuthGate({ children }) {
   const router = useRouter();
 
   useReminderNotificationSync(isAuthenticated);
-  useNotificationTapNavigation();
+  useNotificationTapNavigation(isAuthenticated);
 
   useEffect(() => {
     if (status === "loading") return;

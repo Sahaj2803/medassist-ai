@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking } from "react-native";
 import { getPermissionStatus, requestPermission } from "../services/notificationScheduler";
+import { syncRemindersFromBackend } from "../services/reminderNotificationSync";
 
 /**
  * Tracks OS notification permission status for this app, refreshing
@@ -23,9 +24,13 @@ export default function useNotificationPermission() {
     return () => sub.remove();
   }, [refresh]);
 
-  const request = useCallback(async () => {
+  // When permission is newly granted, schedule the user's existing
+  // reminders right away (no need to recreate them). Pass
+  // { resync: false } from a flow that syncs the reminder itself.
+  const request = useCallback(async ({ resync = true } = {}) => {
     const s = await requestPermission();
     setStatus(s);
+    if (s === "granted" && resync) syncRemindersFromBackend({ force: true });
     return s;
   }, []);
 

@@ -56,7 +56,21 @@ export default function HealthScoreRing({ score, overall, size = 180 }) {
         <Text style={[styles.score, { color: theme.colors.textPrimary, fontSize: size * 0.26 }]}>
           {score}
         </Text>
-        <Text style={[styles.overall, { color }]}>{overall}</Text>
+        <Text
+          style={[
+            styles.overall,
+          {
+            color,
+            fontSize: Math.max(9, size * 0.11),
+            lineHeight: Math.max(11, size * 0.13),
+            maxWidth: size - 14,
+          },
+        ]}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+      >
+      {overall}
+    </Text>
       </View>
     </View>
   );
@@ -65,5 +79,9 @@ export default function HealthScoreRing({ score, overall, size = 180 }) {
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   score: { fontWeight: "700" },
-  overall: { fontSize: 14, fontWeight: "700", marginTop: 2 },
+  overall: {
+    fontWeight: "600",
+    marginTop: 2,
+    textAlign: "center",
+  },  
 });

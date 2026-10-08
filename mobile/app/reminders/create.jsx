@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Alert } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Screen from "../../components/ui/themed/Screen";
@@ -123,8 +123,9 @@ export default function CreateReminderScreen() {
     }
     setSaving(true);
     try {
-      if (notificationPermission.status === "undetermined") {
-        await notificationPermission.request();
+      const askedNow = notificationPermission.status === "undetermined";
+      if (askedNow) {
+        await notificationPermission.request({ resync: false });
       }
       const { reminder } = await reminderApi.create({
         medicineName: medicineName.trim(),
@@ -135,13 +136,27 @@ export default function CreateReminderScreen() {
         channels: { email: true, browser: true, whatsapp: false },
       });
       // Schedule the on-device notification(s) — additive to, and
-      // independent of, the backend's email reminder for this same
-      // reminder. Non-fatal if it fails (e.g. permission denied); the
-      // reminder itself is already saved and email delivery is unaffected.
-      try {
-        if (reminder) await syncReminder(reminder);
-      } catch {
-        // Ignore — email reminder still works.
+      // independent of, the backend's email reminder. The reminder is
+      // already saved, so a scheduling problem is reported, not fatal.
+      if (reminder) {
+        const result = await syncReminder(reminder);
+        if (result.reason === "permission") {
+          if (askedNow) {
+            Alert.alert(
+              "Notifications are off",
+              "Your reminder is saved and you'll still get email reminders. Turn on notifications in system settings to also get an alert on this phone.",
+              [
+                { text: "Not now", style: "cancel" },
+                { text: "Open Settings", onPress: () => notificationPermission.openSettings() },
+              ]
+            );
+          }
+        } else if (!result.ok) {
+          Alert.alert(
+            "Phone alert couldn't be scheduled",
+            "Your reminder is saved and email reminders will still arrive, but the alert on this phone could not be set up. Opening Reminders again will retry."
+          );
+        }
       }
       router.back();
     } catch (e) {
