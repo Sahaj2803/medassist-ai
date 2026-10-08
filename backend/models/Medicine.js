@@ -74,6 +74,11 @@ const medicineSchema = new mongoose.Schema(
     // Lets the frontend know an older record needs Re-analyze to appear in
     // the user's now-current preferred language, without a bulk migration.
     aiAnalysisLanguage: { type: String, enum: ["en", "hi", "gu"], default: null },
+
+    // Canonical identity of this medicine line (name + dosage + frequency,
+    // see utils/medicineDedupe.js). Used only by the unique index below.
+    // Not exposed in API responses. Legacy records simply don't have it.
+    dedupeKey: { type: String, select: false },
   },
   { timestamps: true }
 );
@@ -84,6 +89,16 @@ medicineSchema.index({ user: 1, name: 1 });
 // prescription.controller.js's analyzePrescription — both run this
 // exact filter shape.
 medicineSchema.index({ user: 1, needsReview: 1 });
+// Final database guard against duplicate medicine lines inside ONE
+// prescription. Scoped per prescription (and so per user — a prescription
+// belongs to exactly one user), so the same medicine on another
+// prescription or for another user is unaffected. PARTIAL: only documents
+// that actually have a dedupeKey are indexed, so pre-existing records
+// (including any legacy duplicates) can never make the index build fail.
+medicineSchema.index(
+  { prescription: 1, dedupeKey: 1 },
+  { unique: true, partialFilterExpression: { dedupeKey: { $type: "string" } } }
+);
 
 const Medicine = mongoose.model("Medicine", medicineSchema);
 

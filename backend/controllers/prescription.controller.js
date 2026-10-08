@@ -1,10 +1,74 @@
 import fs from "fs/promises";
 import Prescription from "../models/Prescription.js";
 import Medicine from "../models/Medicine.js";
+import Reminder from "../models/Reminder.js";
 import { AppError, asyncHandler } from "../middleware/errorHandler.js";
 import { fileKindFromMime } from "../middleware/upload.js";
 import aiGateway, { REVIEW_CONFIDENCE_THRESHOLD } from "../ai/aiGateway.js";
 import { autoCreateReminderForMedicine } from "../services/reminderService.js";
+import { hashFile } from "../utils/fileHash.js";
+import {
+  buildMedicineKey,
+  dedupeExtractedMedicines,
+  findMatchingPrescriptionIds,
+  uniqueMedicineNames,
+} from "../utils/medicineDedupe.js";
+
+const DUPLICATE_PRESCRIPTION_MESSAGE =
+  "This prescription was already uploaded, so no duplicate was created. Showing your existing record.";
+
+const isDuplicateKeyError = (err, field) =>
+  err?.code === 11000 && (field ? Object.keys(err.keyPattern || err.keyValue || {}).includes(field) : true);
+
+/** Best-effort removal of an upload we decided not to keep. */
+async function discardUploadedFile(filePath) {
+  try {
+    await fs.unlink(filePath);
+  } catch (err) {
+    console.warn(`[Prescription] Could not remove duplicate upload: ${err.message}`);
+  }
+}
+
+const duplicateMedicineError = () =>
+  new AppError(
+    "This medicine (same name, dosage and frequency) is already on this prescription.",
+    409
+  );
+
+/**
+ * Throws a 409 if another medicine on this prescription already has the
+ * given canonical key. Compares keys computed from the stored fields (not
+ * the stored dedupeKey) so legacy records without a key are covered too.
+ */
+async function assertNoDuplicateOnPrescription(prescriptionId, key, exceptMedicineId = null) {
+  const filter = { prescription: prescriptionId };
+  if (exceptMedicineId) filter._id = { $ne: exceptMedicineId };
+  const siblings = await Medicine.find(filter).select("name dosage frequency").lean();
+  if (siblings.some((s) => buildMedicineKey(s) === key)) throw duplicateMedicineError();
+}
+
+/**
+ * Looks for an existing prescription of THIS user that is the same
+ * prescription as a fresh extraction: its medicine set (canonical
+ * name + dosage + frequency + duration) is exactly equal. Always scoped
+ * to the user; ignores prescriptions that no longer exist.
+ */
+async function findExistingPrescriptionForExtraction(userId, extractedMedicines) {
+  const rows = await Medicine.find({ user: userId })
+    .select("prescription name dosage frequency durationDays")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  for (const prescriptionId of findMatchingPrescriptionIds(extractedMedicines, rows)) {
+    const existing = await Prescription.findOne({
+      _id: prescriptionId,
+      user: userId,
+      status: { $ne: "failed" },
+    }).select("_id");
+    if (existing) return existing;
+  }
+  return null;
+}
 
 /**
  * @route   POST /api/prescriptions
@@ -28,6 +92,33 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
   const fileType = fileKindFromMime(req.file.mimetype);
   const publicPath = `/uploads/prescriptions/${req.user.id}/${req.file.filename}`;
 
+  // Re-sends the user's EXISTING prescription instead of creating a second
+  // one. Nothing is inserted or modified, so the existing medicines and
+  // their reminders are left exactly as they were.
+  const respondWithExisting = async (existingId) => {
+    await discardUploadedFile(req.file.path);
+    const existing = await Prescription.findOne({ _id: existingId, user: req.user.id }).populate(
+      "medicines"
+    );
+    return res
+      .status(200)
+      .json({ success: true, duplicate: true, message: DUPLICATE_PRESCRIPTION_MESSAGE, prescription: existing });
+  };
+
+  // Layer 1 — byte-identical file already uploaded by this user. Checked
+  // BEFORE the AI call, so it costs no AI quota and AI output variation
+  // can't matter.
+  let fileHash = null;
+  try {
+    fileHash = await hashFile(req.file.path);
+  } catch (err) {
+    console.warn(`[Prescription Upload] Could not hash file: ${err.message}`);
+  }
+  if (fileHash) {
+    const sameFile = await Prescription.findOne({ user: req.user.id, fileHash }).select("_id");
+    if (sameFile) return respondWithExisting(sameFile._id);
+  }
+
   let ocrText = "";
   let ocrConfidence = 0;
   let aiDoctorNotes = "";
@@ -47,6 +138,11 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
     aiDoctorNotes = result.doctorNotes;
     extractedMedicines = result.medicines;
 
+    // Layer 2a — the same medicine listed twice in one AI response
+    // (same canonical name + dosage + frequency) becomes one record.
+    // Different dosage/frequency/name are never merged.
+    extractedMedicines = dedupeExtractedMedicines(extractedMedicines).medicines;
+
     if (!ocrText && extractedMedicines.length === 0) {
       status = "needs_review";
       failureReason = "Gemini Vision could not read enough text from this file.";
@@ -59,35 +155,71 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
     console.error(`[Prescription Upload] ${err.message}`);
   }
 
-  let prescription = await Prescription.create({
-    user: req.user.id,
-    fileUrl: publicPath,
-    filePath: req.file.path,
-    originalName: req.file.originalname,
-    fileType,
-    mimeType: req.file.mimetype,
-    sizeBytes: req.file.size,
-    ocrText,
-    ocrConfidence,
-    aiDoctorNotes,
-    status,
-    failureReason,
-  });
+  const hasMedicines = status !== "failed" && extractedMedicines.length > 0;
 
-  if (status !== "failed" && extractedMedicines.length > 0) {
-    const medicineDocs = await Medicine.insertMany(
-      extractedMedicines.map((m) => ({
-        user: req.user.id,
-        prescription: prescription._id,
-        name: m.name,
-        dosage: m.dosage,
-        frequency: m.frequency,
-        durationDays: m.durationDays,
-        instructions: m.instructions,
-        confidence: m.confidence,
-        needsReview: m.confidence < REVIEW_CONFIDENCE_THRESHOLD,
-      }))
-    );
+  // Layer 2b — the extraction is the same prescription the user already
+  // has (identical medicine set). Only an EXACT set match counts: a new
+  // prescription that merely shares some drugs keeps its own records.
+  if (hasMedicines) {
+    const existing = await findExistingPrescriptionForExtraction(req.user.id, extractedMedicines);
+    if (existing) return respondWithExisting(existing._id);
+  }
+
+  let prescription;
+  try {
+    prescription = await Prescription.create({
+      user: req.user.id,
+      fileUrl: publicPath,
+      filePath: req.file.path,
+      originalName: req.file.originalname,
+      fileType,
+      mimeType: req.file.mimetype,
+      sizeBytes: req.file.size,
+      // Only remembered once the upload produced medicines, so a failed or
+      // empty upload can still be retried with the same file.
+      fileHash: hasMedicines && fileHash ? fileHash : undefined,
+      ocrText,
+      ocrConfidence,
+      aiDoctorNotes,
+      status,
+      failureReason,
+    });
+  } catch (err) {
+    // Two identical uploads raced past the checks above; the unique
+    // (user, fileHash) index let only one win. Return the winner.
+    if (isDuplicateKeyError(err, "fileHash")) {
+      const winner = await Prescription.findOne({ user: req.user.id, fileHash }).select("_id");
+      if (winner) return respondWithExisting(winner._id);
+    }
+    throw err;
+  }
+
+  if (hasMedicines) {
+    let medicineDocs;
+    try {
+      medicineDocs = await Medicine.insertMany(
+        extractedMedicines.map((m) => ({
+          user: req.user.id,
+          prescription: prescription._id,
+          name: m.name,
+          dosage: m.dosage,
+          frequency: m.frequency,
+          durationDays: m.durationDays,
+          instructions: m.instructions,
+          confidence: m.confidence,
+          // Duplicate lines that disagreed on duration/instructions were
+          // merged above; make the user look at the result.
+          needsReview: m.confidence < REVIEW_CONFIDENCE_THRESHOLD || m.hadConflict === true,
+          dedupeKey: buildMedicineKey(m),
+        }))
+      );
+    } catch (err) {
+      // Don't let a half-created upload block a retry of the same file.
+      await Prescription.updateOne({ _id: prescription._id }, { $unset: { fileHash: 1 } }).catch(
+        () => {}
+      );
+      throw err;
+    }
 
     const anyNeedsReview = medicineDocs.some((m) => m.needsReview);
     prescription.medicines = medicineDocs.map((m) => m._id);
@@ -210,7 +342,9 @@ export const analyzePrescription = asyncHandler(async (req, res) => {
     needsReview: false,
   }).select("name");
 
-  const uniqueNames = allUserMedicines.map((m) => m.name);
+  // Same drug listed more than once (e.g. two strengths, or legacy
+  // duplicates) is one name for interaction purposes.
+  const uniqueNames = uniqueMedicineNames(allUserMedicines.map((m) => m.name));
 
   try {
     const interactions = await aiGateway.checkInteractions(uniqueNames, req.user.preferredLanguage);
@@ -308,7 +442,25 @@ export const deletePrescription = asyncHandler(async (req, res) => {
     throw new AppError("Prescription not found", 404);
   }
 
-  await Medicine.deleteMany({ prescription: prescription._id });
+  // Medicine.prescription is a required single reference, so every
+  // medicine found here belongs to this prescription alone — none are
+  // shared with another prescription.
+  const medicineIds = (
+    await Medicine.find({ prescription: prescription._id, user: req.user.id }).select("_id").lean()
+  ).map((m) => m._id);
+
+  // Children first, parent last. Each step is an idempotent deleteMany,
+  // so if one fails the prescription still exists and the user can
+  // simply retry — no half-deleted state that can't be finished.
+  // Reminders are matched by this prescription's medicines OR by the
+  // prescription link (auto-created reminders set both; manually created
+  // ones only set `medicine`). Fully custom reminders (no medicine, no
+  // prescription) never match and are left untouched.
+  await Reminder.deleteMany({
+    user: req.user.id,
+    $or: [{ medicine: { $in: medicineIds } }, { prescription: prescription._id }],
+  });
+  await Medicine.deleteMany({ prescription: prescription._id, user: req.user.id });
   await prescription.deleteOne();
 
   try {
@@ -344,11 +496,39 @@ export const updateMedicine = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) updates[field] = req.body[field];
   });
 
-  const medicine = await Medicine.findOneAndUpdate(
-    { _id: medicineId, prescription: prescriptionId },
-    updates,
-    { new: true, runValidators: true }
-  );
+  const current = await Medicine.findOne({ _id: medicineId, prescription: prescriptionId })
+    .select("name dosage frequency")
+    .lean();
+  if (!current) {
+    throw new AppError("Medicine not found on this prescription", 404);
+  }
+
+  // Only when the edit changes the medicine's identity (name/dosage/
+  // frequency) do we re-check for a clash with another line on this
+  // prescription. A plain "confirm" never trips this, even for legacy
+  // records that already had look-alikes.
+  const nextIdentity = {
+    name: updates.name !== undefined ? updates.name : current.name,
+    dosage: updates.dosage !== undefined ? updates.dosage : current.dosage,
+    frequency: updates.frequency !== undefined ? updates.frequency : current.frequency,
+  };
+  const nextKey = buildMedicineKey(nextIdentity);
+  if (nextKey !== buildMedicineKey(current)) {
+    await assertNoDuplicateOnPrescription(prescriptionId, nextKey, current._id);
+    updates.dedupeKey = nextKey;
+  }
+
+  let medicine;
+  try {
+    medicine = await Medicine.findOneAndUpdate(
+      { _id: medicineId, prescription: prescriptionId },
+      updates,
+      { new: true, runValidators: true }
+    );
+  } catch (err) {
+    if (isDuplicateKeyError(err, "dedupeKey")) throw duplicateMedicineError();
+    throw err;
+  }
 
   if (!medicine) {
     throw new AppError("Medicine not found on this prescription", 404);
@@ -390,18 +570,28 @@ export const addMedicine = asyncHandler(async (req, res) => {
     throw new AppError("Medicine name is required", 400);
   }
 
-  const medicine = await Medicine.create({
-    user: req.user.id,
-    prescription: prescription._id,
-    name,
-    dosage,
-    frequency,
-    durationDays,
-    instructions,
-    confidence: 1,
-    needsReview: false,
-    confirmedByUser: true,
-  });
+  const dedupeKey = buildMedicineKey({ name, dosage, frequency });
+  await assertNoDuplicateOnPrescription(prescription._id, dedupeKey);
+
+  let medicine;
+  try {
+    medicine = await Medicine.create({
+      user: req.user.id,
+      prescription: prescription._id,
+      name,
+      dosage,
+      frequency,
+      durationDays,
+      instructions,
+      confidence: 1,
+      needsReview: false,
+      confirmedByUser: true,
+      dedupeKey,
+    });
+  } catch (err) {
+    if (isDuplicateKeyError(err, "dedupeKey")) throw duplicateMedicineError();
+    throw err;
+  }
 
   prescription.medicines.push(medicine._id);
   await prescription.save();

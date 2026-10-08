@@ -16,6 +16,10 @@ const prescriptionSchema = new mongoose.Schema(
     fileType: { type: String, enum: ["image", "pdf"], required: true },
     mimeType: { type: String, required: true },
     sizeBytes: { type: Number, required: true },
+    // SHA-256 of the uploaded file bytes. Only set once an upload produced
+    // medicines, so a failed/empty upload can still be retried. Not exposed
+    // in API responses.
+    fileHash: { type: String, select: false },
 
     // OCR results (now produced by Gemini Vision, not Tesseract)
     ocrText: { type: String, default: "" },
@@ -65,6 +69,12 @@ const prescriptionSchema = new mongoose.Schema(
 );
 
 prescriptionSchema.index({ user: 1, createdAt: -1 });
+// One user can't hold the same file twice. Partial, so legacy prescriptions
+// (no fileHash) and failed/empty uploads are never indexed.
+prescriptionSchema.index(
+  { user: 1, fileHash: 1 },
+  { unique: true, partialFilterExpression: { fileHash: { $type: "string" } } }
+);
 
 const Prescription = mongoose.model("Prescription", prescriptionSchema);
 
