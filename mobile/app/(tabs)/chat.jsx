@@ -22,14 +22,15 @@ import { Loading, EmptyState } from "../../components/ui/themed/States";
 import chatApi from "../../services/chatApi";
 import { getErrorMessage } from "../../services/api";
 import { useTheme } from "../../context/ThemeContext";
+import { useTranslation } from "../../context/LanguageContext";
 
 // Simple, calm questions to help a non-technical user get started. Purely
 // a UI convenience — tapping one still goes through the same real
 // send flow / API call as typing it in, nothing is faked here.
 const SUGGESTIONS = [
-  "What is this medicine for?",
-  "Any side effects to watch for?",
-  "Can I take these together?",
+  "chat.suggest1",
+  "chat.suggest2",
+  "chat.suggest3",
 ];
 
 function TypingDots() {
@@ -109,6 +110,7 @@ function ChatBubble({ message }) {
 
 export default function ChatScreen() {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [chatId, setChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -159,12 +161,12 @@ export default function ChatScreen() {
   const confirmDeleteConversation = (conversation) => {
     if (deletingId) return; // Prevent duplicate delete actions while one is in flight.
     Alert.alert(
-      "Delete conversation",
-      `Delete "${conversation.title || "this conversation"}"? This can't be undone.`,
+      t("chat.deleteTitle"),
+      t("chat.deleteConfirm", { title: conversation.title || t("chat.thisConversation") }),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: t("common.delete"),
           style: "destructive",
           onPress: () => handleDeleteConversation(conversation._id),
         },
@@ -225,16 +227,16 @@ export default function ChatScreen() {
             <Ionicons name="medkit" size={18} color={theme.colors.teal} />
           </View>
           <View>
-            <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>MedAssist AI</Text>
-            <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Your health assistant</Text>
+            <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>{t("chat.medassistAI")}</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>{t("chat.subtitle")}</Text>
           </View>
         </View>
         <View style={styles.headerActions}>
-          <IconButton accessibilityLabel="Start a new chat" onPress={startNewChat}>
+          <IconButton accessibilityLabel={t("chat.newChat")} onPress={startNewChat}>
             <Ionicons name="add" size={20} color={theme.colors.textPrimary} />
           </IconButton>
           <IconButton
-            accessibilityLabel="View conversation history"
+            accessibilityLabel={t("chat.viewHistory")}
             onPress={() => {
               setError("");
               setListVisible(true);
@@ -266,14 +268,14 @@ export default function ChatScreen() {
           >
             <EmptyState
               icon="chatbubble-ellipses-outline"
-              title="How can I help with your health today?"
-              message="Ask about your medicines, symptoms, or general health questions. This is informational only, not a diagnosis."
+              title={t("chat.emptyTitle")}
+              message={t("chat.emptyDesc")}
             />
             <View style={styles.suggestionsWrap}>
               {SUGGESTIONS.map((s) => (
                 <Pressable
                   key={s}
-                  onPress={() => handleSuggestion(s)}
+                  onPress={() => handleSuggestion(t(s))}
                   style={({ pressed }) => [
                     styles.suggestionChip,
                     {
@@ -283,7 +285,7 @@ export default function ChatScreen() {
                     },
                   ]}
                 >
-                  <Text style={[styles.suggestionText, { color: theme.colors.primary }]}>{s}</Text>
+                  <Text style={[styles.suggestionText, { color: theme.colors.primary }]}>{t(s)}</Text>
                 </Pressable>
               ))}
             </View>
@@ -316,7 +318,7 @@ export default function ChatScreen() {
             <TextField
               value={input}
               onChangeText={setInput}
-              placeholder="Ask a health question..."
+              placeholder={t("chat.inputPlaceholder")}
               autoCapitalize="sentences"
               onSubmitEditing={handleSend}
               style={styles.inputField}
@@ -327,14 +329,14 @@ export default function ChatScreen() {
             size={50}
             onPress={handleSend}
             disabled={!input.trim() || sending}
-            accessibilityLabel="Send message"
+            accessibilityLabel={t("chat.sendMessage")}
           >
             <Ionicons name="send" size={18} color="#FFFFFF" />
           </IconButton>
         </View>
       </KeyboardAvoidingView>
 
-      <BottomSheet visible={listVisible} onClose={() => setListVisible(false)} title="Conversations" maxHeight="70%">
+      <BottomSheet visible={listVisible} onClose={() => setListVisible(false)} title={t("chat.conversations")} maxHeight="70%">
         {error ? (
           <View style={[styles.errorBanner, styles.modalErrorBanner, { backgroundColor: `${theme.colors.error}12`, borderColor: `${theme.colors.error}40` }]}>
             <Ionicons name="alert-circle-outline" size={16} color={theme.colors.error} />
@@ -344,7 +346,7 @@ export default function ChatScreen() {
         {loadingList ? (
           <Loading />
         ) : conversations.length === 0 ? (
-          <Text style={[styles.emptyListText, { color: theme.colors.textSecondary }]}>No past conversations yet.</Text>
+          <Text style={[styles.emptyListText, { color: theme.colors.textSecondary }]}>{t("chat.noPastConversations")}</Text>
         ) : (
           <FlatList
             data={conversations}

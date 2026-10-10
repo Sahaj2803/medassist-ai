@@ -13,20 +13,22 @@ import healthApi from "../../services/healthApi";
 import { getErrorMessage } from "../../services/api";
 import { fetchTodayOccurrences, getAdherenceSummary } from "../../services/doseTracking";
 import { useTheme } from "../../context/ThemeContext";
+import { useTranslation } from "../../context/LanguageContext";
 
 const QUICK_ACTIONS = [
-  { key: "scan", label: "Scan Prescription", icon: "camera", route: "/prescription/upload" },
-  { key: "lab", label: "Upload Lab Report", icon: "flask", route: "/lab-report/upload" },
-  { key: "meds", label: "View Medicines", icon: "medical", route: "/(tabs)/medicines" },
-  { key: "reminders", label: "View Reminders", icon: "alarm", route: "/reminders" },
-  { key: "diet", label: "Diet Plan", icon: "restaurant", route: "/diet" },
-  { key: "chat", label: "Ask AI", icon: "chatbubble-ellipses", route: "/(tabs)/chat" },
+  { key: "scan", labelKey: "dashboard.actionScan", icon: "camera", route: "/prescription/upload" },
+  { key: "lab", labelKey: "dashboard.actionLab", icon: "flask", route: "/lab-report/upload" },
+  { key: "meds", labelKey: "dashboard.actionMeds", icon: "medical", route: "/(tabs)/medicines" },
+  { key: "reminders", labelKey: "dashboard.actionReminders", icon: "alarm", route: "/reminders" },
+  { key: "diet", labelKey: "dashboard.actionDiet", icon: "restaurant", route: "/diet" },
+  { key: "chat", labelKey: "dashboard.actionAskAI", icon: "chatbubble-ellipses", route: "/(tabs)/chat" },
 ];
 
 export default function DashboardScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [score, setScore] = useState(null);
   const [scoreError, setScoreError] = useState(null);
   const [nextDose, setNextDose] = useState(null);
@@ -82,7 +84,7 @@ export default function DashboardScreen() {
     <Screen onRefresh={onRefresh} refreshing={refreshing}>
       <View style={styles.header}>
         <View>
-          <Text style={[styles.bodyMuted, { color: theme.colors.textSecondary }]}>Welcome back</Text>
+          <Text style={[styles.bodyMuted, { color: theme.colors.textSecondary }]}>{t("dashboard.welcome")}</Text>
           <Text style={[styles.h1, { color: theme.colors.textPrimary }]}>{firstName}</Text>
         </View>
         <View style={styles.headerActions}>
@@ -90,7 +92,7 @@ export default function DashboardScreen() {
           <Pressable
             onPress={() => router.push("/profile")}
             style={[styles.avatarButton, { backgroundColor: theme.colors.primary }]}
-            accessibilityLabel="Open profile"
+            accessibilityLabel={t("dashboard.openProfile")}
           >
             <Ionicons name="person" size={20} color={theme.colors.white} />
           </Pressable>
@@ -98,7 +100,7 @@ export default function DashboardScreen() {
       </View>
 
       {loading ? (
-        <Loading label="Loading your dashboard..." />
+        <Loading label={t("dashboard.loading")} />
       ) : (
         <>
           <Pressable onPress={() => router.push("/health-score")}>
@@ -107,25 +109,25 @@ export default function DashboardScreen() {
                 <View style={styles.scoreEmpty}>
                   <Ionicons name="alert-circle-outline" size={28} color={theme.colors.error} />
                   <Text style={[styles.bodyMuted, { color: theme.colors.textSecondary }]}>
-                    Unable to load your health score.
+                    {t("dashboard.scoreUnavailable")}
                   </Text>
                 </View>
               ) : score?.available === false || !score ? (
                 <View style={styles.scoreEmpty}>
                   <Ionicons name="pulse-outline" size={28} color={theme.colors.textSecondary} />
                   <Text style={[styles.bodyMuted, { color: theme.colors.textSecondary, textAlign: "center" }]}>
-                    Upload a prescription or lab report to see your AI Health Score.
+                    {t("dashboard.scorePrompt")}
                   </Text>
                 </View>
               ) : (
                 <View style={styles.scoreRow}>
                   <HealthScoreRing score={score.score} overall={score.overall} size={88} />
                   <View style={styles.flex1}>
-                    <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>AI Health Score</Text>
+                    <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>{t("nav.healthScore")}</Text>
                     <Text style={[styles.bodyMuted, { color: theme.colors.textSecondary }]}>
-                      Based on your labs, interactions, and reminder adherence.
+                      {t("dashboard.scoreDesc")}
                     </Text>
-                    <Text style={[styles.linkText, { color: theme.colors.primary }]}>View details →</Text>
+                    <Text style={[styles.linkText, { color: theme.colors.primary }]}>{t("dashboard.viewDetails")}</Text>
                   </View>
                 </View>
               )}
@@ -134,9 +136,9 @@ export default function DashboardScreen() {
 
           <Card style={styles.spacedTop}>
             <View style={styles.cardHeaderRow}>
-              <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>Next dose</Text>
+              <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>{t("dashboard.nextDose")}</Text>
               <Pressable onPress={() => router.push("/reminders")}>
-                <Text style={[styles.linkText, { color: theme.colors.primary }]}>View all</Text>
+                <Text style={[styles.linkText, { color: theme.colors.primary }]}>{t("common.viewAll")}</Text>
               </Pressable>
             </View>
             {nextDose ? (
@@ -154,7 +156,7 @@ export default function DashboardScreen() {
                 </View>
               </View>
             ) : (
-              <Text style={[styles.bodyMuted, { color: theme.colors.textSecondary }]}>No upcoming doses today.</Text>
+              <Text style={[styles.bodyMuted, { color: theme.colors.textSecondary }]}>{t("dashboard.noUpcomingDoses")}</Text>
             )}
             {typeof adherence?.percentage === "number" ? (
               <Pressable
@@ -163,14 +165,14 @@ export default function DashboardScreen() {
               >
                 <Ionicons name="stats-chart" size={14} color={theme.colors.teal} />
                 <Text style={[styles.adherenceText, { color: theme.colors.teal }]}>
-                  {adherence.percentage}% medication adherence · View history
+                  {t("dashboard.adherenceSummary", { percentage: adherence.percentage })}
                 </Text>
               </Pressable>
             ) : null}
           </Card>
 
           <View style={[styles.cardHeaderRow, styles.spacedTop]}>
-            <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>Quick actions</Text>
+            <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>{t("dashboard.quickActions")}</Text>
           </View>
           <View style={styles.actionsGrid}>
             {QUICK_ACTIONS.map((action) => (
@@ -182,23 +184,23 @@ export default function DashboardScreen() {
                 <View style={[styles.actionIconBox, { backgroundColor: `${theme.colors.primary}17` }]}>
                   <Ionicons name={action.icon} size={22} color={theme.colors.primary} />
                 </View>
-                <Text style={[styles.actionLabel, { color: theme.colors.textPrimary }]}>{action.label}</Text>
+                <Text style={[styles.actionLabel, { color: theme.colors.textPrimary }]}>{t(action.labelKey)}</Text>
               </Pressable>
             ))}
           </View>
 
           <View style={[styles.cardHeaderRow, styles.spacedTop]}>
-            <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>Recent activity</Text>
+            <Text style={[styles.h3, { color: theme.colors.textPrimary }]}>{t("dashboard.recentActivity")}</Text>
             <Pressable onPress={() => router.push("/timeline")}>
-              <Text style={[styles.linkText, { color: theme.colors.primary }]}>View timeline</Text>
+              <Text style={[styles.linkText, { color: theme.colors.primary }]}>{t("dashboard.viewTimeline")}</Text>
             </Pressable>
           </View>
           <Card>
             {events.length === 0 ? (
               <EmptyState
                 icon="time-outline"
-                title="No activity yet"
-                message="Your prescriptions, labs, and reminders will show up here."
+                title={t("dashboard.noActivity")}
+                message={t("dashboard.noActivityDesc")}
               />
             ) : (
               events.map((event, i) => (

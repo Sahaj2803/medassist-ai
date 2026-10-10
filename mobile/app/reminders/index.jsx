@@ -14,6 +14,7 @@ import { syncAllReminders } from "../../services/notificationScheduler";
 import { fetchTodayOccurrences, getAdherenceSummary, getDisplayStatus } from "../../services/doseTracking";
 import { useTheme } from "../../context/ThemeContext";
 import useThemedHeader from "../../hooks/useThemedHeader";
+import { useTranslation } from "../../context/LanguageContext";
 
 /**
  * PART 4 — redesigned Reminders list. All data is real: `occurrences`
@@ -24,6 +25,7 @@ import useThemedHeader from "../../hooks/useThemedHeader";
  */
 export default function RemindersScreen() {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   useThemedHeader();
   const router = useRouter();
   const [occurrences, setOccurrences] = useState([]);
@@ -108,16 +110,16 @@ export default function RemindersScreen() {
     <Screen scroll={false} padded={false}>
       <View style={styles.header}>
         <View>
-          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>Reminders</Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>Today's schedule</Text>
+          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>{t("nav.reminders")}</Text>
+          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>{t("reminders.subtitle")}</Text>
         </View>
         <View style={styles.headerActions}>
-          <IconButton accessibilityLabel="View dose history" onPress={() => router.push("/reminders/history")}>
+          <IconButton accessibilityLabel={t("nav.doseHistory")} onPress={() => router.push("/reminders/history")}>
             <Ionicons name="time-outline" size={19} color={theme.colors.textPrimary} />
           </IconButton>
           <IconButton
             variant="primary"
-            accessibilityLabel="Add a reminder"
+            accessibilityLabel={t("nav.newReminder")}
             onPress={() => router.push("/reminders/create")}
           >
             <Ionicons name="add" size={22} color="#FFFFFF" />
@@ -149,7 +151,7 @@ export default function RemindersScreen() {
               ) : null}
               {restOfList.length > 0 ? (
                 <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>
-                  {nextDose ? "REST OF TODAY" : "TODAY"}
+                  {nextDose ? t("reminders.restOfToday") : t("reminders.today")}
                 </Text>
               ) : null}
             </View>
@@ -161,9 +163,9 @@ export default function RemindersScreen() {
             nextDose ? null : (
               <EmptyState
                 icon="alarm-outline"
-                title="No reminders today"
-                message="Create a reminder to get notified by email when it's time for a dose."
-                action={<Button title="New reminder" onPress={() => router.push("/reminders/create")} />}
+                title={t("reminders.emptyTitle")}
+                message={t("reminders.emptyDesc")}
+                action={<Button title={t("nav.newReminder")} onPress={() => router.push("/reminders/create")} />}
               />
             )
           }

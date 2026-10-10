@@ -12,6 +12,7 @@ import useThemedHeader from "../hooks/useThemedHeader";
 import { getErrorMessage } from "../services/api";
 import { SUPPORTED_LANGUAGES } from "../constants/config";
 import { useTheme } from "../context/ThemeContext";
+import { useLanguage } from "../context/LanguageContext";
 
 function ProfileRow({ icon, iconColor, label, value, onPress, danger }) {
   const { theme } = useTheme();
@@ -41,10 +42,11 @@ export default function ProfileScreen() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  // Reuses the same preferredLanguage field + updateProfile() call that
-  // Settings already uses, so both screens stay in sync automatically —
-  // no second language system, no separate persistence path.
-  const [language, setLanguage] = useState(user?.preferredLanguage || "en");
+  // Active language comes from the shared LanguageProvider. Picking one saves
+  // preferredLanguage to the account via updateProfile(); AuthContext then
+  // applies the server-confirmed value to the shared state and local storage.
+  // If the save fails nothing changes and the error is shown.
+  const { language, t } = useLanguage();
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [savingLanguageCode, setSavingLanguageCode] = useState(null);
   const [languageError, setLanguageError] = useState("");
@@ -61,7 +63,14 @@ export default function ProfileScreen() {
     setSavingLanguageCode(code);
     try {
       await updateProfile({ preferredLanguage: code });
-      setLanguage(code);
+      // Translate persisted AI explanations after the account preference is saved.
+      // UI language changes immediately; this request refreshes saved AI content.
+      try {
+        const api = (await import("../services/api")).default;
+        await api.post("/translation/sync", { language: code }, { timeout: 120000 });
+      } catch (syncError) {
+        console.warn("Saved AI content language sync did not finish:", syncError?.message);
+      }
       setLanguagePickerVisible(false);
     } catch (e) {
       setLanguageError(getErrorMessage(e));
@@ -127,8 +136,8 @@ export default function ProfileScreen() {
             <ProfileRow
               icon="language-outline"
               iconColor={theme.colors.teal}
-              label="Language"
-              value={savingLanguageCode ? "Saving..." : currentLanguageLabel}
+              label={t("profile.language")}
+              value={savingLanguageCode ? t("profile.saving") : currentLanguageLabel}
               onPress={() => setLanguagePickerVisible(true)}
             />
           </>

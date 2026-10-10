@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import BottomSheet from "./ui/themed/BottomSheet";
 import { SUPPORTED_LANGUAGES } from "../constants/config";
 import { useTheme } from "../context/ThemeContext";
+import { useLanguage } from "../context/LanguageContext";
 
 /**
  * PART 5 — redesigned on top of the shared themed BottomSheet (same shell
@@ -14,11 +15,12 @@ import { useTheme } from "../context/ThemeContext";
  */
 export default function LanguagePickerModal({ visible, onClose, selectedCode, savingCode, onSelect }) {
   const { theme } = useTheme();
+  const { t } = useLanguage();
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Choose language" maxHeight="65%">
+    <BottomSheet visible={visible} onClose={onClose} title={t("language.choose")} maxHeight="65%">
       <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-        Used for AI explanations, summaries, and this app's interface.
+        {t("language.subtitle")}
       </Text>
       <FlatList
         data={SUPPORTED_LANGUAGES}

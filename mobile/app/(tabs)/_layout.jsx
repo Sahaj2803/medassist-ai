@@ -1,9 +1,11 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../context/ThemeContext";
+import { useTranslation } from "../../context/LanguageContext";
 
 export default function TabsLayout() {
   const { theme } = useTheme();
+  const { t } = useTranslation();
 
   return (
     <Tabs
@@ -25,35 +27,35 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: t("nav.home"),
           tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="prescriptions"
         options={{
-          title: "Prescriptions",
+          title: t("nav.prescriptions"),
           tabBarIcon: ({ color, size }) => <Ionicons name="document-text" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="medicines"
         options={{
-          title: "Medicines",
+          title: t("nav.medicines"),
           tabBarIcon: ({ color, size }) => <Ionicons name="medical" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="lab-reports"
         options={{
-          title: "Lab Reports",
+          title: t("nav.labReports"),
           tabBarIcon: ({ color, size }) => <Ionicons name="flask" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="chat"
         options={{
-          title: "Chat",
+          title: t("nav.chat"),
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-ellipses" color={color} size={size} />,
         }}
       />

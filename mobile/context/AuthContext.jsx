@@ -3,6 +3,8 @@ import authApi from "../services/authApi";
 import secureStorage from "../utils/secureStorage";
 import { registerUnauthorizedHandler } from "../services/api";
 import { cancelAllScheduled } from "../services/notificationScheduler";
+import { useLanguage } from "./LanguageContext";
+import { getLanguage } from "../i18n/runtime";
 
 export const AuthContext = createContext(null);
 
@@ -15,6 +17,12 @@ export const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | authenticated | unauthenticated
+  // Language policy: the language is a DEVICE preference (persisted locally,
+  // kept after sign-out so auth screens stay in the last-used language), but
+  // whenever an account session starts or is restored the ACCOUNT's
+  // preferredLanguage overrides it (missing/invalid -> English, never the
+  // previous user's language). applyAccountLanguage has a stable identity.
+  const { applyAccountLanguage } = useLanguage();
 
   const clearSession = useCallback(async () => {
     await secureStorage.clear();
@@ -34,13 +42,16 @@ export function AuthProvider({ children }) {
       try {
         const { user: freshUser } = await authApi.getMe();
         await secureStorage.setUser(freshUser);
+        // Apply the language BEFORE flipping to "authenticated" so the first
+        // authenticated render is already in the account's language.
+        await applyAccountLanguage(freshUser?.preferredLanguage);
         setUser(freshUser);
         setStatus("authenticated");
       } catch {
         await clearSession();
       }
     })();
-  }, [clearSession]);
+  }, [clearSession, applyAccountLanguage]);
 
   // A 401 from any API call (expired/invalid token) drops the session
   // everywhere at once, not just on the screen that made the call.
@@ -53,9 +64,10 @@ export function AuthProvider({ children }) {
   const persistSession = useCallback(async (data) => {
     await secureStorage.setToken(data.token);
     await secureStorage.setUser(data.user);
+    await applyAccountLanguage(data.user?.preferredLanguage);
     setUser(data.user);
     setStatus("authenticated");
-  }, []);
+  }, [applyAccountLanguage]);
 
   const login = useCallback(
     async (email, password) => {
@@ -68,7 +80,8 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(
     async (payload) => {
-      const data = await authApi.register(payload);
+      // New accounts start in the language currently active on the device.
+      const data = await authApi.register({ ...payload, preferredLanguage: getLanguage() });
       await persistSession(data);
       return data.user;
     },
@@ -95,9 +108,14 @@ export function AuthProvider({ children }) {
   const updateProfile = useCallback(async (payload) => {
     const { user: updatedUser } = await authApi.updateProfile(payload);
     await secureStorage.setUser(updatedUser);
+    // Only re-apply when the response actually carries a language, so an
+    // unrelated profile edit can never reset the active language.
+    if (updatedUser?.preferredLanguage !== undefined) {
+      await applyAccountLanguage(updatedUser.preferredLanguage);
+    }
     setUser(updatedUser);
     return updatedUser;
-  }, []);
+  }, [applyAccountLanguage]);
 
   const value = useMemo(
     () => ({

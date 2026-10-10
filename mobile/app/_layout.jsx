@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
 import AuthProvider from "../context/AuthContext";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
+import { LanguageProvider, useLanguage, useTranslation } from "../context/LanguageContext";
 import useAuth from "../hooks/useAuth";
 import { Loading } from "../components/ui/themed/States";
 import { View, StyleSheet } from "react-native";
@@ -95,6 +96,7 @@ function useNotificationTapNavigation(isAuthenticated) {
 function AuthGate({ children }) {
   const { status, isAuthenticated } = useAuth();
   const { theme } = useTheme();
+  const { isReady: languageReady, t } = useLanguage();
   const segments = useSegments();
   const router = useRouter();
 
@@ -113,10 +115,12 @@ function AuthGate({ children }) {
     }
   }, [status, isAuthenticated, segments, router]);
 
-  if (status === "loading") {
+  // Hold the splash until the stored language has been read, so the first
+  // visible screen never flashes English before switching.
+  if (status === "loading" || !languageReady) {
     return (
       <View style={[styles.splash, { backgroundColor: theme.colors.background }]}>
-        <Loading label="Starting MedAssist..." />
+        <Loading label={t("nav.splash")} />
       </View>
     );
   }
@@ -135,28 +139,29 @@ function AuthGate({ children }) {
  */
 function ThemedNavigator() {
   const { theme, scheme } = useTheme();
+  const { t } = useTranslation();
   return (
     <>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="prescription/[id]" options={{ headerShown: true, title: "Prescription" }} />
-        <Stack.Screen name="prescription/upload" options={{ headerShown: true, title: "Upload Prescription" }} />
-        <Stack.Screen name="medicine/[id]" options={{ headerShown: true, title: "Medicine" }} />
-        <Stack.Screen name="lab-report/[id]" options={{ headerShown: true, title: "Lab Report" }} />
-        <Stack.Screen name="lab-report/upload" options={{ headerShown: true, title: "Upload Lab Report" }} />
-        <Stack.Screen name="reminders/index" options={{ headerShown: true, title: "Reminders" }} />
-        <Stack.Screen name="reminders/create" options={{ headerShown: true, title: "New Reminder" }} />
-        <Stack.Screen name="reminders/[id]" options={{ headerShown: true, title: "Reminder" }} />
-        <Stack.Screen name="reminders/history" options={{ headerShown: true, title: "Dose History" }} />
-        <Stack.Screen name="health-score" options={{ headerShown: true, title: "AI Health Score" }} />
-        <Stack.Screen name="timeline" options={{ headerShown: true, title: "Health Timeline" }} />
-        <Stack.Screen name="diet/index" options={{ headerShown: true, title: "Diet Guide" }} />
-        <Stack.Screen name="diet/history" options={{ headerShown: true, title: "Diet Plan History" }} />
-        <Stack.Screen name="diet/[id]" options={{ headerShown: true, title: "Diet Plan" }} />
-        <Stack.Screen name="profile" options={{ headerShown: true, title: "Profile" }} />
-        <Stack.Screen name="settings" options={{ headerShown: true, title: "Settings" }} />
+        <Stack.Screen name="prescription/[id]" options={{ headerShown: true, title: t("nav.prescription") }} />
+        <Stack.Screen name="prescription/upload" options={{ headerShown: true, title: t("nav.uploadPrescription") }} />
+        <Stack.Screen name="medicine/[id]" options={{ headerShown: true, title: t("nav.medicine") }} />
+        <Stack.Screen name="lab-report/[id]" options={{ headerShown: true, title: t("nav.labReport") }} />
+        <Stack.Screen name="lab-report/upload" options={{ headerShown: true, title: t("nav.uploadLabReport") }} />
+        <Stack.Screen name="reminders/index" options={{ headerShown: true, title: t("nav.reminders") }} />
+        <Stack.Screen name="reminders/create" options={{ headerShown: true, title: t("nav.newReminder") }} />
+        <Stack.Screen name="reminders/[id]" options={{ headerShown: true, title: t("nav.reminder") }} />
+        <Stack.Screen name="reminders/history" options={{ headerShown: true, title: t("nav.doseHistory") }} />
+        <Stack.Screen name="health-score" options={{ headerShown: true, title: t("nav.healthScore") }} />
+        <Stack.Screen name="timeline" options={{ headerShown: true, title: t("nav.timeline") }} />
+        <Stack.Screen name="diet/index" options={{ headerShown: true, title: t("nav.dietGuide") }} />
+        <Stack.Screen name="diet/history" options={{ headerShown: true, title: t("nav.dietHistory") }} />
+        <Stack.Screen name="diet/[id]" options={{ headerShown: true, title: t("nav.dietPlan") }} />
+        <Stack.Screen name="profile" options={{ headerShown: true, title: t("profile.title") }} />
+        <Stack.Screen name="settings" options={{ headerShown: true, title: t("profile.settings") }} />
       </Stack>
     </>
   );
@@ -166,11 +171,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.flex}>
       <ThemeProvider>
-      <AuthProvider>
-        <AuthGate>
-          <ThemedNavigator />
-        </AuthGate>
-      </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <AuthGate>
+              <ThemedNavigator />
+            </AuthGate>
+          </AuthProvider>
+        </LanguageProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

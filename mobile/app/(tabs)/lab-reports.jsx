@@ -9,6 +9,7 @@ import Button from "../../components/ui/themed/Button";
 import { useTheme } from "../../context/ThemeContext";
 import labReportApi from "../../services/labReportApi";
 import { getErrorMessage } from "../../services/api";
+import { useTranslation } from "../../context/LanguageContext";
 
 /**
  * Redesigned Lab Reports list (Part 3). Same data source, loading/refresh
@@ -18,6 +19,7 @@ import { getErrorMessage } from "../../services/api";
 export default function LabReportsScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [reports, setReports] = useState([]);
   const [state, setState] = useState("loading");
   const [error, setError] = useState("");
@@ -46,23 +48,23 @@ export default function LabReportsScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]} edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <View>
-          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>Lab Reports</Text>
+          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>{t("nav.labReports")}</Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            AI-explained results, all in one place
+            {t("labs.subtitle")}
           </Text>
         </View>
         <Pressable
           onPress={() => router.push("/lab-report/upload")}
           style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
           accessibilityRole="button"
-          accessibilityLabel="Upload a lab report"
+          accessibilityLabel={t("nav.uploadLabReport")}
         >
           <Ionicons name="add" size={22} color={theme.colors.white} />
         </Pressable>
       </View>
 
       {state === "loading" ? (
-        <Loading label="Loading your lab reports..." />
+        <Loading label={t("labs.loading")} />
       ) : state === "error" ? (
         <ErrorState message={error} onRetry={load} />
       ) : (
@@ -81,10 +83,10 @@ export default function LabReportsScreen() {
           ListEmptyComponent={
             <EmptyState
               icon="flask-outline"
-              title="No lab reports yet"
-              message="Upload a lab report to get clear, AI-powered explanations of your results."
+              title={t("labs.emptyTitle")}
+              message={t("labs.emptyDesc")}
               action={
-                <Button title="Upload a lab report" onPress={() => router.push("/lab-report/upload")} />
+                <Button title={t("nav.uploadLabReport")} onPress={() => router.push("/lab-report/upload")} />
               }
             />
           }

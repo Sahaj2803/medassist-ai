@@ -13,6 +13,7 @@
     "test": "node --import ./__tests__/register.mjs --test __tests__/*.test.mjs"
   },
   "dependencies": {
+    "@expo/image-utils": "^0.11.6",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",

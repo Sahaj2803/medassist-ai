@@ -22,7 +22,7 @@
     "android": {
       "package": "com.medassist.mobile",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/medassist-icon.png",
+        "foregroundImage": "./assets/adaptive-foreground.png",
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [

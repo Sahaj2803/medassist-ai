@@ -5,6 +5,7 @@ import Screen from "../../components/ui/themed/Screen";
 import DietGuideForm from "../../components/DietGuideForm";
 import { useTheme } from "../../context/ThemeContext";
 import useThemedHeader from "../../hooks/useThemedHeader";
+import { useTranslation } from "../../context/LanguageContext";
 
 /**
  * PART 4 — redesigned Diet Guide entry screen. Always shows the
@@ -14,6 +15,7 @@ import useThemedHeader from "../../hooks/useThemedHeader";
  */
 export default function DietGuideScreen() {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   useThemedHeader();
   const router = useRouter();
 
@@ -28,15 +30,14 @@ export default function DietGuideScreen() {
       <View style={[styles.iconBadge, { backgroundColor: `${theme.colors.teal}17` }]}>
         <Ionicons name="restaurant" size={22} color={theme.colors.teal} />
       </View>
-      <Text style={[styles.heading, { color: theme.colors.textPrimary }]}>Diet Guide</Text>
+      <Text style={[styles.heading, { color: theme.colors.textPrimary }]}>{t("diet.title")}</Text>
       <Text style={[styles.subheading, { color: theme.colors.textSecondary }]}>
-        Create a personalized guide based on your health information and, optionally, one of your
-        analyzed lab reports.
+        {t("diet.subtitle")}
       </Text>
 
       <Pressable onPress={() => router.push("/diet/history")} style={styles.historyLink}>
         <Ionicons name="time-outline" size={16} color={theme.colors.primary} />
-        <Text style={[styles.historyLinkText, { color: theme.colors.primary }]}>View past diet guides</Text>
+        <Text style={[styles.historyLinkText, { color: theme.colors.primary }]}>{t("diet.viewPast")}</Text>
       </Pressable>
 
       <View style={styles.spacedTop}>

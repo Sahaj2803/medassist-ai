@@ -9,10 +9,12 @@ import ThemeToggle from "../../components/ui/themed/ThemeToggle";
 import medicineApi from "../../services/medicineApi";
 import { getErrorMessage } from "../../services/api";
 import { useTheme } from "../../context/ThemeContext";
+import { useTranslation } from "../../context/LanguageContext";
 
 export default function MedicinesScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [medicines, setMedicines] = useState([]);
   const [state, setState] = useState("loading");
   const [error, setError] = useState("");
@@ -56,9 +58,9 @@ export default function MedicinesScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]} edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <View>
-          <Text style={[styles.h1, { color: theme.colors.textPrimary }]}>My Medicines</Text>
+          <Text style={[styles.h1, { color: theme.colors.textPrimary }]}>{t("medicines.title")}</Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            {medicines.length > 0 ? `${medicines.length} from your prescriptions` : "Extracted from your prescriptions"}
+            {medicines.length > 0 ? t("medicines.subtitleCount", { count: medicines.length }) : t("medicines.subtitleEmpty")}
           </Text>
         </View>
         <ThemeToggle size={38} />
@@ -71,7 +73,7 @@ export default function MedicinesScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Search medicines"
+              placeholder={t("medicines.searchPlaceholder")}
               placeholderTextColor={theme.colors.textSecondary}
               style={[styles.searchInput, { color: theme.colors.textPrimary }]}
             />
@@ -85,7 +87,7 @@ export default function MedicinesScreen() {
                   { backgroundColor: !reviewOnly ? theme.colors.primary : theme.colors.surface, borderColor: !reviewOnly ? theme.colors.primary : theme.colors.border },
                 ]}
               >
-                <Text style={[styles.pillText, { color: !reviewOnly ? theme.colors.white : theme.colors.textSecondary }]}>All</Text>
+                <Text style={[styles.pillText, { color: !reviewOnly ? theme.colors.white : theme.colors.textSecondary }]}>{t("common.all")}</Text>
               </Pressable>
               <Pressable
                 onPress={() => setReviewOnly(true)}
@@ -95,7 +97,7 @@ export default function MedicinesScreen() {
                 ]}
               >
                 <Text style={[styles.pillText, { color: reviewOnly ? theme.colors.white : theme.colors.textSecondary }]}>
-                  Needs review ({reviewCount})
+                  {t("medicines.needsReview", { count: reviewCount })}
                 </Text>
               </Pressable>
             </View>
@@ -124,11 +126,11 @@ export default function MedicinesScreen() {
             medicines.length === 0 ? (
               <EmptyState
                 icon="medical-outline"
-                title="No medicines yet"
-                message="Medicines from your analyzed prescriptions will appear here."
+                title={t("medicines.emptyTitle")}
+                message={t("medicines.emptyDesc")}
               />
             ) : (
-              <EmptyState icon="search-outline" title="No matches" message="Try a different search or filter." />
+              <EmptyState icon="search-outline" title={t("common.noMatches")} message={t("common.tryDifferentSearch")} />
             )
           }
         />

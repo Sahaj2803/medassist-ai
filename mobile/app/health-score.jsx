@@ -10,17 +10,12 @@ import useThemedHeader from "../hooks/useThemedHeader";
 import { useTheme } from "../context/ThemeContext";
 import healthApi from "../services/healthApi";
 import { getErrorMessage } from "../services/api";
+import { useTranslation } from "../context/LanguageContext";
 
-const POSITIVE_LABELS = {
-  good_adherence: "Good reminder adherence",
-  labs_within_range: "Lab results within range",
-  no_interactions: "No flagged drug interactions",
-};
-
-const ATTENTION_LABELS = {
-  low_adherence: "Low reminder adherence",
-  interactions_flagged: "Drug interactions flagged",
-  labs_out_of_range: "Some lab results out of range",
+const HEALTH_SCORE_LABELS = {
+  en: { loading:"Calculating your health score...", unavailableTitle:"Your Health Score will appear here", unavailableMessage:"Upload a prescription or lab report, and set up reminders, so MedAssist has enough data to generate your AI Health Score.", title:"Health Score", basedOn:"Based on your reminders, lab reports, and prescriptions", positivesTitle:"What's going well", attentionTitle:"Needs attention", emptyPositive:"Nothing to highlight yet.", emptyAttention:"Nothing flagged right now.", disclaimer:"This score is informational only, generated from your uploaded records. It is not a medical diagnosis or a guarantee of your health status — always consult a doctor for medical advice.", positive:{good_adherence:"Good reminder adherence",labs_within_range:"Lab results within range",no_interactions:"No flagged drug interactions"}, attention:{low_adherence:"Low reminder adherence",interactions_flagged:"Drug interactions flagged",labs_out_of_range:"Some lab results out of range"} },
+  hi: { loading:"आपका हेल्थ स्कोर निकाला जा रहा है...", unavailableTitle:"आपका हेल्थ स्कोर यहाँ दिखेगा", unavailableMessage:"प्रिस्क्रिप्शन या लैब रिपोर्ट अपलोड करें और रिमाइंडर सेट करें, ताकि MedAssist आपका AI हेल्थ स्कोर बना सके।", title:"हेल्थ स्कोर", basedOn:"आपके रिमाइंडर, लैब रिपोर्ट और प्रिस्क्रिप्शन के आधार पर", positivesTitle:"क्या अच्छा चल रहा है", attentionTitle:"ध्यान देने की ज़रूरत", emptyPositive:"अभी दिखाने के लिए कुछ नहीं है।", emptyAttention:"अभी कोई समस्या नहीं मिली।", disclaimer:"यह स्कोर केवल जानकारी के लिए है और आपके अपलोड किए गए रिकॉर्ड पर आधारित है। यह मेडिकल डायग्नोसिस नहीं है। सलाह के लिए डॉक्टर से संपर्क करें।", positive:{good_adherence:"दवा रिमाइंडर का अच्छा पालन",labs_within_range:"लैब परिणाम सामान्य सीमा में",no_interactions:"कोई संदिग्ध दवा इंटरैक्शन नहीं"}, attention:{low_adherence:"दवा रिमाइंडर का कम पालन",interactions_flagged:"दवाओं के बीच संभावित इंटरैक्शन",labs_out_of_range:"कुछ लैब परिणाम सीमा से बाहर"} },
+  gu: { loading:"તમારો હેલ્થ સ્કોર ગણાઈ રહ્યો છે...", unavailableTitle:"તમારો હેલ્થ સ્કોર અહીં દેખાશે", unavailableMessage:"MedAssist તમારો AI હેલ્થ સ્કોર બનાવી શકે તે માટે પ્રિસ્ક્રિપ્શન અથવા લેબ રિપોર્ટ અપલોડ કરો અને રિમાઇન્ડર સેટ કરો.", title:"હેલ્થ સ્કોર", basedOn:"તમારા રિમાઇન્ડર, લેબ રિપોર્ટ અને પ્રિસ્ક્રિપ્શનના આધારે", positivesTitle:"શું સારું ચાલી રહ્યું છે", attentionTitle:"ધ્યાન આપવાની જરૂર", emptyPositive:"હાલમાં દર્શાવવા માટે કંઈ નથી.", emptyAttention:"હાલમાં કોઈ સમસ્યા નોંધાઈ નથી.", disclaimer:"આ સ્કોર માત્ર માહિતી માટે છે અને તમારા અપલોડ કરેલા રેકોર્ડ પરથી બનાવાયો છે. તે તબીબી નિદાન નથી. તબીબી સલાહ માટે ડૉક્ટરનો સંપર્ક કરો.", positive:{good_adherence:"દવાની યાદ અપાવવાની સૂચનાનું સારું પાલન",labs_within_range:"લેબ પરિણામો સામાન્ય મર્યાદામાં",no_interactions:"દવાઓ વચ્ચે કોઈ નોંધાયેલ ક્રિયા નથી"}, attention:{low_adherence:"દવાની યાદ અપાવવાની સૂચનાનું ઓછું પાલન",interactions_flagged:"દવાઓ વચ્ચે સંભવિત ક્રિયા નોંધાઈ",labs_out_of_range:"કેટલાક લેબ પરિણામો મર્યાદાની બહાર"} }
 };
 
 function summarizePositive(p) {
@@ -78,6 +73,8 @@ function BreakdownCard({ title, icon, iconColor, items, emptyMessage, renderDeta
 export default function HealthScoreScreen() {
   useThemedHeader();
   const { theme } = useTheme();
+  const { language } = useTranslation();
+  const labels = HEALTH_SCORE_LABELS[language] || HEALTH_SCORE_LABELS.en;
   const [data, setData] = useState(null);
   const [state, setState] = useState("loading");
   const [error, setError] = useState("");
@@ -99,7 +96,7 @@ export default function HealthScoreScreen() {
     }, [load])
   );
 
-  if (state === "loading") return <Screen><Loading label="Calculating your health score..." /></Screen>;
+  if (state === "loading") return <Screen><Loading label={labels.loading} /></Screen>;
   if (state === "error") return <Screen><ErrorState message={error} onRetry={load} /></Screen>;
 
   if (!data?.available) {
@@ -107,8 +104,8 @@ export default function HealthScoreScreen() {
       <Screen>
         <EmptyState
           icon="pulse-outline"
-          title="Your Health Score will appear here"
-          message="Upload a prescription or lab report, and set up reminders, so MedAssist has enough data to generate your AI Health Score."
+          title={labels.unavailableTitle}
+          message={labels.unavailableMessage}
         />
       </Screen>
     );
@@ -120,28 +117,28 @@ export default function HealthScoreScreen() {
   return (
     <Screen>
       <Card style={styles.heroCard} variant="elevated">
-        <Text style={[styles.heroLabel, { color: theme.colors.textSecondary }]}>Health Score</Text>
+        <Text style={[styles.heroLabel, { color: theme.colors.textSecondary }]}>{labels.title}</Text>
         <View style={styles.ringWrap}>
           <HealthScoreRing score={data.score} overall={data.overall} size={172} />
         </View>
         <Text style={[styles.heroCaption, { color: theme.colors.textSecondary }]}>
-          Based on your reminders, lab reports, and prescriptions
+          {labels.basedOn}
         </Text>
       </Card>
 
       <BreakdownCard
-        title="What's going well"
+        title={labels.positivesTitle}
         icon="checkmark-circle"
         iconColor={theme.colors.teal}
         items={positives}
-        emptyMessage="Nothing to highlight yet."
+        emptyMessage={labels.emptyPositive}
         theme={theme}
         renderDetail={(p, idx, isLast) => (
           <IndicatorRow
             key={idx}
             icon="checkmark-circle"
             color={theme.colors.teal}
-            text={POSITIVE_LABELS[p.key] || p.key}
+            text={labels.positive[p.key] || p.key}
             detail={summarizePositive(p)}
             theme={theme}
             isLast={isLast}
@@ -150,18 +147,18 @@ export default function HealthScoreScreen() {
       />
 
       <BreakdownCard
-        title="Needs attention"
+        title={labels.attentionTitle}
         icon="alert-circle"
         iconColor={theme.colors.orange}
         items={needsAttention}
-        emptyMessage="Nothing flagged right now."
+        emptyMessage={labels.emptyAttention}
         theme={theme}
         renderDetail={(n, idx, isLast) => (
           <IndicatorRow
             key={idx}
             icon="alert-circle"
             color={theme.colors.orange}
-            text={ATTENTION_LABELS[n.key] || n.key}
+            text={labels.attention[n.key] || n.key}
             detail={summarizeAttention(n)}
             theme={theme}
             isLast={isLast}
@@ -170,9 +167,7 @@ export default function HealthScoreScreen() {
       />
 
       <Text style={[styles.disclaimer, { color: theme.colors.textSecondary }]}>
-        This score is informational only, generated from your uploaded records. It is not a
-        medical diagnosis or a guarantee of your health status — always consult a doctor for
-        medical advice.
+        {labels.disclaimer}
       </Text>
     </Screen>
   );

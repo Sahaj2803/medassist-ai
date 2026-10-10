@@ -10,18 +10,20 @@ import ThemeToggle from "../../components/ui/themed/ThemeToggle";
 import prescriptionApi from "../../services/prescriptionApi";
 import { getErrorMessage } from "../../services/api";
 import { useTheme } from "../../context/ThemeContext";
+import { useTranslation } from "../../context/LanguageContext";
 
 const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "processed", label: "Processed" },
-  { key: "processing", label: "Processing" },
-  { key: "needs_review", label: "Needs review" },
-  { key: "failed", label: "Failed" },
+  { key: "all", labelKey: "common.all" },
+  { key: "processed", labelKey: "prescriptions.filterProcessed" },
+  { key: "processing", labelKey: "prescriptions.filterProcessing" },
+  { key: "needs_review", labelKey: "prescriptions.filterNeedsReview" },
+  { key: "failed", labelKey: "prescriptions.filterFailed" },
 ];
 
 export default function PrescriptionsScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [prescriptions, setPrescriptions] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | success | error
   const [error, setError] = useState("");
@@ -67,9 +69,9 @@ export default function PrescriptionsScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]} edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <View>
-          <Text style={[styles.h1, { color: theme.colors.textPrimary }]}>My Prescriptions</Text>
+          <Text style={[styles.h1, { color: theme.colors.textPrimary }]}>{t("prescriptions.title")}</Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            {prescriptions.length > 0 ? `${prescriptions.length} on file` : "Scan or upload to get started"}
+            {prescriptions.length > 0 ? t("prescriptions.subtitleCount", { count: prescriptions.length }) : t("prescriptions.subtitleEmpty")}
           </Text>
         </View>
         <View style={styles.headerActions}>
@@ -77,7 +79,7 @@ export default function PrescriptionsScreen() {
           <Pressable
             onPress={() => router.push("/prescription/upload")}
             style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
-            accessibilityLabel="Scan or upload a prescription"
+            accessibilityLabel={t("nav.uploadPrescription")}
           >
             <Ionicons name="add" size={22} color={theme.colors.white} />
           </Pressable>
@@ -91,7 +93,7 @@ export default function PrescriptionsScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Search prescriptions"
+              placeholder={t("prescriptions.searchPlaceholder")}
               placeholderTextColor={theme.colors.textSecondary}
               style={[styles.searchInput, { color: theme.colors.textPrimary }]}
             />
@@ -118,7 +120,7 @@ export default function PrescriptionsScreen() {
                     ]}
                   >
                     <Text style={[styles.pillText, { color: active ? theme.colors.white : theme.colors.textSecondary }]}>
-                      {f.label}
+                      {t(f.labelKey)}
                     </Text>
                   </Pressable>
                 );
@@ -149,12 +151,12 @@ export default function PrescriptionsScreen() {
             prescriptions.length === 0 ? (
               <EmptyState
                 icon="document-text-outline"
-                title="No prescriptions yet"
-                message="Scan or upload your first prescription and MedAssist will read the medicines for you."
-                action={<Button title="Scan a prescription" onPress={() => router.push("/prescription/upload")} />}
+                title={t("prescriptions.emptyTitle")}
+                message={t("prescriptions.emptyDesc")}
+                action={<Button title={t("nav.uploadPrescription")} onPress={() => router.push("/prescription/upload")} />}
               />
             ) : (
-              <EmptyState icon="search-outline" title="No matches" message="Try a different search or filter." />
+              <EmptyState icon="search-outline" title={t("common.noMatches")} message={t("common.tryDifferentSearch")} />
             )
           }
         />

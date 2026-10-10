@@ -53,35 +53,51 @@ export default function HealthScoreRing({ score, overall, size = 180 }) {
         />
       </Svg>
       <View style={[StyleSheet.absoluteFill, styles.center]}>
-        <Text style={[styles.score, { color: theme.colors.textPrimary, fontSize: size * 0.26 }]}>
+        <Text
+          style={[
+            styles.score,
+            {
+              color: theme.colors.textPrimary,
+              fontSize: size * 0.24,
+              lineHeight: size * 0.28,
+            },
+          ]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
           {score}
         </Text>
         <Text
           style={[
             styles.overall,
-          {
-            color,
-            fontSize: Math.max(9, size * 0.11),
-            lineHeight: Math.max(11, size * 0.13),
-            maxWidth: size - 14,
-          },
-        ]}
-        numberOfLines={2}
-        adjustsFontSizeToFit
-      >
-      {overall}
-    </Text>
+            {
+              color,
+              fontSize: Math.max(9, size * 0.085),
+              lineHeight: Math.max(11, size * 0.105),
+              width: size * 0.68,
+              maxWidth: size * 0.68,
+            },
+          ]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          allowFontScaling
+        >
+          {overall}
+        </Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: "center", justifyContent: "center" },
+  center: { alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   score: { fontWeight: "700" },
   overall: {
     fontWeight: "600",
-    marginTop: 2,
+    marginTop: 3,
     textAlign: "center",
+    flexShrink: 1,
   },  
 });

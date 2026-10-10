@@ -1,2 +1,1 @@
-import { register } from "node:module";
-register("./loader.mjs", import.meta.url);
+// Node test bootstrap; app source is transpiled by Expo during runtime.
