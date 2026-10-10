@@ -61,28 +61,16 @@
 
 
 
-```javascript
+
 import Prescription from "../models/Prescription.js";
 import Medicine from "../models/Medicine.js";
 
 const LANGS = new Set(["en", "hi", "gu"]);
 
-/**
- * Language change only updates the user's selected language.
- *
- * Existing prescription interactions and medicine AI analysis
- * must NOT be automatically translated.
- *
- * Translation should happen only when the user explicitly
- * regenerates the analysis using the selected language.
- */
 export async function syncUserLanguage(userId, language) {
   if (!LANGS.has(language)) {
     throw new Error("Unsupported language");
   }
-
-  // Intentionally do not modify existing prescription or
-  // medicine analysis when the user changes the language.
 
   const [prescriptions, medicines] = await Promise.all([
     Prescription.countDocuments({ user: userId }),
@@ -95,7 +83,6 @@ export async function syncUserLanguage(userId, language) {
     skipped: prescriptions + medicines,
     errors: 0,
     message:
-      "Language preference updated. Existing AI analyses remain unchanged until manually regenerated.",
+      "Language preference selected. Existing AI analyses were not changed. Regenerate an analysis manually to use the selected language.",
   };
 }
-```
