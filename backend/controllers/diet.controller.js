@@ -155,12 +155,14 @@ export const generateDietGuide = asyncHandler(async (req, res) => {
       ? "lab_report"
       : "manual";
 
+  // Generate once in the account's currently selected language. Existing saved guides
+  // are deliberately not translated by /translation/sync; regeneration is the opt-in refresh.
   let guide;
   try {
     guide = await aiGateway.generateDietGuide({
       healthContext,
       labReport: snapshot,
-      language: req.user.preferredLanguage,
+      language: req.user.preferredLanguage || "en",
     });
   } catch (err) {
     console.error(`[Diet Guide] ${err.message}`);
@@ -199,12 +201,13 @@ export const regenerateDietGuide = asyncHandler(async (req, res) => {
 
   const { snapshot } = await loadLabReportContext(dietGuide.labReport, req.user.id);
 
+  // Explicit regeneration uses the currently selected account language.
   let guide;
   try {
     guide = await aiGateway.generateDietGuide({
       healthContext: dietGuide.healthContext,
       labReport: snapshot,
-      language: req.user.preferredLanguage,
+      language: req.user.preferredLanguage || "en",
     });
   } catch (err) {
     console.error(`[Diet Guide] Regeneration failed: ${err.message}`);

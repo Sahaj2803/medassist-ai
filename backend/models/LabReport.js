@@ -81,6 +81,9 @@ const labReportSchema = new mongoose.Schema(
       index: true,
     },
     failureReason: { type: String, default: null },
+    // Immutable English/source AI payloads used to switch languages without
+    // translating already-translated text or changing clinical source data.
+    languageContent: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
   },
   { timestamps: true }
 );

@@ -300,8 +300,11 @@ export const analyzePrescription = asyncHandler(async (req, res) => {
     throw new AppError("Prescription not found", 404);
   }
 
-  // ---- Step 1: explain each not-yet-explained medicine in this prescription ----
-  const toAnalyze = prescription.medicines.filter((m) => !m.aiAnalyzedAt);
+  // ---- Step 1: explicitly re-generate every medicine explanation ----
+  // This endpoint is invoked only by the user's Analyze/Re-analyze action.
+  // Do not use aiAnalyzedAt as a skip condition here: a manual re-analysis
+  // must refresh saved explanations in the currently selected language.
+  const toAnalyze = prescription.medicines;
 
   const analysisResults = await Promise.allSettled(
     toAnalyze.map(async (medicine) => {

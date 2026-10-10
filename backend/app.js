@@ -19,6 +19,7 @@ import adminRoutes from "./routes/admin.routes.js";
 import labReportRoutes from "./routes/labReport.routes.js";
 import healthInsightsRoutes from "./routes/healthInsights.routes.js";
 import dietRoutes from "./routes/diet.routes.js";
+import translationRoutes from "./routes/translation.routes.js";
 
 const app = express();
 
@@ -86,6 +87,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/lab-reports", labReportRoutes);
 app.use("/api/health-insights", healthInsightsRoutes);
 app.use("/api/diet", dietRoutes);
+app.use("/api/translation", translationRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({

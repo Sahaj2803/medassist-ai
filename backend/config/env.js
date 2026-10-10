@@ -38,7 +38,7 @@ export const env = {
   
 
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 900000),
-  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 200),
+  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 1000),
 };
 
 const requiredInProd = ["JWT_SECRET", "MONGO_URI"];

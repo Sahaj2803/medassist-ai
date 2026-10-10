@@ -90,6 +90,18 @@ async function callGroq(messages, { json = false, model = GROQ_MODEL } = {}) {
  * the whole prescription. Input is the structured JSON Gemini already
  * extracted; never the raw image/OCR text.
  */
+/** Translate saved AI-generated JSON while preserving keys and clinical identifiers. */
+export async function translateStructuredContent(content, language) {
+  const languageNames = { en: "English", hi: "Hindi", gu: "Gujarati" };
+  const target = languageNames[language];
+  if (!target) throw new AppError("Unsupported translation language.", 400);
+  const text = await callGroq([
+    { role: "system", content: "You are a careful medical-content translator. Return exactly one valid JSON object, no markdown." },
+    { role: "user", content: `Translate only human-readable explanatory text in this JSON into ${target}. Preserve the exact JSON structure and keys. Do NOT translate medicine/product names, test names, numeric values, dosage/strength, frequencies, units, reference ranges, dates, severity/status codes, abbreviations, or identifiers. Do not add, remove, infer, or change any medical facts. Keep all numbers and units byte-for-byte identical. Input JSON:\n${JSON.stringify(content)}` },
+  ], { json: true });
+  return parseJsonResponse(text);
+}
+
 export async function generateSummary(structuredJson, language) {
   const text = await callGroq([
     { role: "system", content: "You write clear, reassuring, plain-language health summaries." },
@@ -239,6 +251,7 @@ export default {
   GROQ_MODEL,
   GROQ_DIET_MODEL,
   generateSummary,
+  translateStructuredContent,
   explainMedicine,
   checkInteractions,
   generateChatReply,

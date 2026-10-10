@@ -9,13 +9,14 @@ import { sendTokenResponse } from "../utils/sendTokenResponse.js";
  */
 export const register = asyncHandler(async (req, res) => {
   const { name, email, password, phone } = req.body;
+  const preferredLanguage = ["en", "hi", "gu"].includes(req.body.preferredLanguage) ? req.body.preferredLanguage : "en";
 
   const existing = await User.findOne({ email });
   if (existing) {
     throw new AppError("An account with this email already exists", 409);
   }
 
-  const user = await User.create({ name, email, password, phone });
+  const user = await User.create({ name, email, password, phone, preferredLanguage });
 
   sendTokenResponse(user, 201, res);
 });

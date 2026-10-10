@@ -79,6 +79,9 @@ const medicineSchema = new mongoose.Schema(
     // see utils/medicineDedupe.js). Used only by the unique index below.
     // Not exposed in API responses. Legacy records simply don't have it.
     dedupeKey: { type: String, select: false },
+    // Immutable English/source AI payloads used to switch languages without
+    // translating already-translated text or changing clinical source data.
+    languageContent: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
   },
   { timestamps: true }
 );
